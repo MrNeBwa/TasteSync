@@ -10,3 +10,8 @@ def test_movie_response_contract_in_openapi() -> None:
 def test_sessions_recommendations_endpoint_exists() -> None:
     schema = app.openapi()
     assert "/api/sessions/{session_id}/movies" in schema["paths"]
+
+
+def test_movie_detail_endpoint_exists() -> None:
+    schema = app.openapi()
+    assert "/api/movies/{movie_id}" in schema["paths"]

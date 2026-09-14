@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { request, register as registerApi, type User } from '../lib/api';
+import { onTokenRefreshed, request, register as registerApi, type User } from '../lib/api';
 import { clearAuth, loadAuth, saveAuth, saveUser } from '../lib/auth';
 
 type AuthContextValue = {
@@ -34,6 +34,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setLoading(false);
       }
     })();
+  }, []);
+
+  useEffect(() => {
+    onTokenRefreshed((next) => setToken(next));
+    return () => onTokenRefreshed(null);
   }, []);
 
   async function login(email: string, password: string) {

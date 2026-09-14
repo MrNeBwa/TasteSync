@@ -1,4 +1,11 @@
 import { API_URL } from './config';
+import { refreshAccessToken } from './auth';
+
+let tokenRefreshedListener: ((token: string) => void) | null = null;
+
+export function onTokenRefreshed(listener: ((token: string) => void) | null) {
+  tokenRefreshedListener = listener;
+}
 
 export type User = { id: string; username: string; email: string; birth_date: string | null };
 export type RoomMember = { user_id: string; username: string; role: 'OWNER' | 'MEMBER'; is_ready: boolean; joined_at: string };
@@ -19,12 +26,26 @@ export type Movie = {
   genres: Genre[];
 };
 export type Session = { id: string; room_id: string; status: string; created_at: string; started_at?: string | null; finished_at?: string | null };
+export type Match = { id: string; session_id: string; movie_id: string; created_at: string; started_at?: string | null; finished_at?: string | null };
 
 export async function request<T>(path: string, options: RequestInit = {}, token?: string): Promise<T> {
-  const headers = new Headers(options.headers);
-  if (options.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
-  if (token) headers.set('Authorization', `Bearer ${token}`);
-  const res = await fetch(`${API_URL}${path}`, { ...options, headers });
+  const doFetch = async (authToken?: string): Promise<Response> => {
+    const headers = new Headers(options.headers);
+    if (options.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+    if (authToken) headers.set('Authorization', `Bearer ${authToken}`);
+    return fetch(`${API_URL}${path}`, { ...options, headers });
+  };
+
+  let res = await doFetch(token);
+  if (res.status === 401 && token) {
+    try {
+      const next = await refreshAccessToken();
+      tokenRefreshedListener?.(next);
+      res = await doFetch(next);
+    } catch {
+      // Refresh failed; the response below reports the original 401.
+    }
+  }
   const text = await res.text();
   let body: unknown = null;
   try { body = text ? JSON.parse(text) : null; } catch { body = text; }

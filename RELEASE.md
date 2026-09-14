@@ -1,48 +1,47 @@
-# Movie Match — Canonical Development Release
-
-## Important: one source of truth
-
-This repository is the canonical monorepo. `apps/api` and `apps/web` are part of the same release and must be kept together when you need the complete application.
-
-**Never extract a frontend-only archive over the repository root.** Frontend-only updates must contain `apps/web` only. This prevents an older backend snapshot from overwriting the current backend.
+# Movie Match — Production Release Notes
 
 ## Versions
 
-- Frontend: v1.3.0
-- Backend: v1.3.0
+- Web: v1.3.1 (`apps/web`)
+- Mobile: v0.2.0 (`apps/mobile`)
+- Backend: v1.3.0 (`apps/api`)
 - DB migrations: Alembic head
+
+## Repo layout
+
+`apps/web` — веб-клиент, `apps/mobile` — нативный клиент (Expo/React Native),
+`apps/api` — единый бэкенд для обоих клиентов. Все части одного релиза и должны
+обновляться вместе.
 
 ## Local startup
 
-1. Start infrastructure:
-
 ```bash
 docker compose -f infra/docker-compose.yml up -d
+cd apps/api && uv sync && uv run alembic upgrade head && uv run uvicorn app.main:app --reload
+npx pnpm@10.15.0 install
+npx pnpm@10.15.0 dev:web     # веб на http://localhost:5173
+npx pnpm@10.15.0 dev:mobile  # Expo dev server
 ```
 
-2. Backend:
+## Production checklist
 
-```bash
-cd apps/api
-uv sync
-uv run alembic upgrade head
-uv run uvicorn app.main:app --reload
-```
+- [ ] Задать `JWT_SECRET_KEY` (≥32 случайных байтов) и `TMDB_API_TOKEN` в `.env`;
+- [ ] Указать `CORS_ORIGINS` под продовый домен веба;
+- [ ] Поднять `infra/docker-compose.yml` (PostgreSQL, Redis) или managed-сервисы;
+- [ ] `uv run alembic upgrade head`;
+- [ ] Собрать веб: `pnpm --filter @movie-match/web build`;
+- [ ] Собрать мобайл: `npx expo prebuild` + Android/iOS сборка (см. apps/mobile/README.md);
+- [ ] Прогнать `./scripts/verify-release.sh`.
 
-3. Web:
+## Chevron rule (contract)
 
-```bash
-corepack pnpm install
-corepack pnpm dev:web
-```
+UPD: два клиента потребляют один HTTP/JSON контракт бэкенда. Любое изменение поля
+ответа должно обновлять единовременно:
 
-## Contract rule
+1. бэкенд Pydantic response schema;
+2. сериализатор эндпоинта;
+3. тип/потребителя в `apps/web` и `apps/mobile`;
+4. контрактный тест (`apps/api/tests/test_api_contract.py`).
 
-The frontend consumes the backend's HTTP/JSON contract. Changes to a response field must update:
-
-1. backend Pydantic response schema;
-2. endpoint serializer;
-3. shared frontend type/consumer;
-4. contract test.
-
-The `MovieResponse.is_adult` field is covered by this rule specifically because it previously caused runtime 500 responses.
+Поле `MovieResponse.is_adult` покрыто этим правилом специально: ранее оно
+вызывало runtime 500 на обоих клиентах.
