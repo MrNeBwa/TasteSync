@@ -1,14 +1,15 @@
 {
-  "name": "movie-match",
+  "name": "tastesync",
   "private": true,
   "packageManager": "pnpm@10.15.0",
   "scripts": {
     "dev:web": "pnpm --filter @movie-match/web dev",
     "dev:mobile": "pnpm --filter @movie-match/mobile start",
-    "dev:api": "cd apps/api && uv run uvicorn app.main:app --reload",
+    "dev:api": "cd apps/api && uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm -r test"
+    "test": "pnpm -r test",
+    "verify": "pnpm typecheck && pnpm test"
   },
   "devDependencies": {
     "turbo": "^2.5.6"

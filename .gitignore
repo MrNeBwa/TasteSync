@@ -13,5 +13,4 @@ __pycache__
 .venv
 *.pyc
 coverage
-*.tsbuildinfo
 .DS_Store

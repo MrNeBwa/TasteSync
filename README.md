@@ -1,73 +1,34 @@
-# Movie Match
+# Movie Match v0.3 — working web + backend
 
-Social movie discovery: создайте комнату с друзьями, голосуйте LIKE/DISLIKE/SKIP
-и найдите один общий фильм без споров.
+## This iteration
+- Register flow is explicitly `register -> login -> /auth/me`.
+- After first successful login, if no `birth_date` is stored, the user must complete the age gate before continuing.
+- Settings > Age and censorship edits the stored birth date.
+- Backend stores `users.birth_date`.
+- TMDB `adult` flag is persisted as `movies.is_adult`.
+- Recommendations hide adult movies for under-18 users; in a room, 18+ movies are allowed only when every participant is 18+.
+- Trailer stays visually clean: no large text overlay on top of the video; autoplay remains muted to comply with browser autoplay rules.
+- Full-page cinematic backdrop uses the current movie backdrop/poster as a blurred background layer and combines it with the extracted poster palette when CORS allows pixel sampling.
+- FastAPI enables CORS for local Vite development.
 
-Монорепозиторий на pnpm + turbo:
-
-| Каталог      | Что это                                             |
-| ------------ | --------------------------------------------------- |
-| `apps/web`   | Веб-клиент (React 19 + Vite)                        |
-| `apps/mobile`| Нативное Android/iOS приложение (Expo + React Native)|
-| `apps/api`   | Бэкенд (FastAPI + SQLAlchemy async + PostgreSQL)    |
-| `infra`      | Docker Compose: PostgreSQL + Redis                  |
-| `scripts`    | Вспомогательные скрипты (запуск, проверка релиза)   |
-
-Оба клиента работают с одним API-контрактом из `apps/api`. Изменение поля в
-ответе API должно обновить схему Pydantic, сериализатор, типы клиентов и
-контракт-тесты (см. `RELEASE.md`).
-
-## Быстрый старт
-
-Требования: Node.js 20+, pnpm, uv, Docker, PostgreSQL compatible tooling.
+## Database
+Run migrations:
 
 ```bash
-# 1. Инфраструктура
-docker compose -f infra/docker-compose.yml up -d
-
-# 2. Бэкенд
 cd apps/api
-uv sync
-cp .env.example .env
 uv run alembic upgrade head
-uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-
-# 3. Веб
-cd ..
-npx pnpm@10.15.0 install
-npx pnpm@10.15.0 dev:web
-
-# 4. Мобайл (Android/iOS)
-npx pnpm@10.15.0 dev:mobile
 ```
 
-Или всё сразу:
+Latest revision: `0007_movie_adult_flag`.
 
+## Backend
 ```bash
-./scripts/start.sh
+cd apps/api
+uv run uvicorn app.main:app --reload
 ```
 
-API docs: http://127.0.0.1:8000/docs · Health: http://127.0.0.1:8000/api/health
-
-### Мобильное приложение
-
-Физический телефон не достанет `127.0.0.1` на машине разработчика. Укажите LAN
-адрес машины в `apps/mobile/.env`:
-
-```env
-EXPO_PUBLIC_API_URL=http://192.168.x.x:8000/api
-EXPO_PUBLIC_WS_URL=ws://192.168.x.x:8000
-```
-
-Эмулятор Android использует `http://10.0.2.2:8000/api`. Подробности —
-в `apps/mobile/README.md`.
-
-## Проверка продакшн-готовности
-
+## Web
 ```bash
-./scripts/verify-release.sh
+pnpm install
+pnpm dev:web
 ```
-
-- компиляция и тесты API (`pytest`);
-- линтер ruff;
-- typecheck веб- и мобильного клиента.

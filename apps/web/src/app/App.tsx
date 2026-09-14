@@ -1,95 +1,16 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-
-type Screen = 'landing' | 'auth' | 'home' | 'room' | 'session' | 'match' | 'settings';
-type AuthMode = 'login' | 'register';
-type VoteValue = 'LIKE' | 'DISLIKE' | 'SKIP';
-
-type User = { id: string; username: string; email: string; birth_date: string | null };
-type RoomMember = { user_id: string; username: string; role: 'OWNER' | 'MEMBER'; is_ready: boolean; joined_at: string };
-type Room = { id: string; name: string; code: string; owner_id: string; status: string; created_at: string; members: RoomMember[] };
-type Genre = { id: string; name: string };
-type Movie = {
-  id: string;
-  title: string;
-  overview: string | null;
-  release_date: string | null;
-  poster_url: string | null;
-  backdrop_url: string | null;
-  popularity: number | null;
-  vote_average: number | null;
-  vote_count: number | null;
-  is_adult: boolean;
-  trailer_url: string | null;
-  genres: Genre[];
-};
-type Session = { id: string; room_id: string; status: string; created_at: string; started_at?: string | null; finished_at?: string | null };
-type Palette = { primary: string; secondary: string; glow: string; ink: string };
-
-const API_BASE = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000/api';
-const WS_BASE = API_BASE.replace(/^http/, 'ws').replace(/\/api\/?$/, '');
-const FALLBACK_PALETTE: Palette = { primary: '#efbd42', secondary: '#e5679f', glow: 'rgba(239,189,66,.28)', ink: '#121212' };
-
-let onTokenRefreshed: ((token: string) => void) | null = null;
-
-function setTokenRefreshListener(listener: ((token: string) => void) | null) {
-  onTokenRefreshed = listener;
-}
-
-async function refreshAccessToken(): Promise<string> {
-  const refresh = localStorage.getItem('mm_refresh');
-  if (!refresh) throw new Error('No refresh token');
-  const res = await fetch(`${API_BASE}/auth/refresh`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refresh_token: refresh }),
-  });
-  const text = await res.text();
-  let body: unknown = null;
-  try { body = text ? JSON.parse(text) : null; } catch { body = text; }
-  if (!res.ok) {
-    const detail = typeof body === 'object' && body && 'detail' in body ? String((body as { detail: unknown }).detail) : `HTTP ${res.status}`;
-    throw new Error(detail);
-  }
-  const result = body as { access_token: string; refresh_token: string };
-  localStorage.setItem('mm_token', result.access_token);
-  localStorage.setItem('mm_refresh', result.refresh_token);
-  return result.access_token;
-}
-
-async function request<T>(path: string, options: RequestInit = {}, token?: string): Promise<T> {
-  const doFetch = async (authToken?: string): Promise<Response> => {
-    const headers = new Headers(options.headers);
-    if (options.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
-    if (authToken) headers.set('Authorization', `Bearer ${authToken}`);
-    return fetch(`${API_BASE}${path}`, { ...options, headers });
-  };
-
-  let res = await doFetch(token);
-  if (res.status === 401 && token) {
-    try {
-      const next = await refreshAccessToken();
-      onTokenRefreshed?.(next);
-      res = await doFetch(next);
-    } catch {
-      // Refresh failed; the response below reports the original 401.
-    }
-  }
-  const text = await res.text();
-  let body: unknown = null;
-  try { body = text ? JSON.parse(text) : null; } catch { body = text; }
-  if (!res.ok) {
-    const detail = typeof body === 'object' && body && 'detail' in body ? String((body as { detail: unknown }).detail) : `HTTP ${res.status}`;
-    throw new Error(detail);
-  }
-  return body as T;
-}
+import { apiFetch as request } from '../shared/api/client';
+import { WS_BASE_URL } from '../shared/api/config';
+import { clearTokens, getAccessToken, saveTokens } from '../shared/lib/storage';
+import { getYouTubeEmbedUrl } from '../shared/lib/youtube';
+import type { AuthMode, Genre, Movie, Palette, Room, RoomMember, Screen, Session, User, VoteValue } from '../shared/types/domain';
 
 function App() {
-  const [screen, setScreen] = useState<Screen>(() => localStorage.getItem('mm_token') ? 'home' : 'landing');
-  const [token, setToken] = useState(() => localStorage.getItem('mm_token') ?? '');
+  const [screen, setScreen] = useState<Screen>(() => getAccessToken() ? 'home' : 'landing');
+  const [token, setToken] = useState(() => getAccessToken());
   const [user, setUser] = useState<User | null>(null);
   const [authMode, setAuthMode] = useState<AuthMode>('login');
-  const [authLoading, setAuthLoading] = useState(Boolean(localStorage.getItem('mm_token')));
+  const [authLoading, setAuthLoading] = useState(Boolean(getAccessToken()));
   const [room, setRoom] = useState<Room | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [matchMovie, setMatchMovie] = useState<Movie | null>(null);
@@ -98,8 +19,6 @@ function App() {
   const [ageSaving, setAgeSaving] = useState(false);
 
   const authenticated = Boolean(token && user);
-
-  useEffect(() => { setTokenRefreshListener((next) => setToken(next)); }, []);
 
   useEffect(() => {
     if (!token) {
@@ -118,8 +37,7 @@ function App() {
       })
       .catch(() => {
         if (!active) return;
-        localStorage.removeItem('mm_token');
-        localStorage.removeItem('mm_refresh');
+        clearTokens();
         setToken('');
         setUser(null);
         setScreen('landing');
@@ -130,7 +48,7 @@ function App() {
 
   useEffect(() => {
     if (!room || !token || !['room', 'session', 'match'].includes(screen)) return;
-    const ws = new WebSocket(`${WS_BASE}/ws/rooms/${room.id}?token=${encodeURIComponent(token)}`);
+    const ws = new WebSocket(`${WS_BASE_URL}/ws/rooms/${room.id}?token=${encodeURIComponent(token)}`);
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data) as { type: string; payload?: unknown };
@@ -143,8 +61,8 @@ function App() {
         if (msg.type === 'MATCH_FOUND' && msg.payload && typeof msg.payload === 'object') {
           const payload = msg.payload as { movie_id: string; session_id: string };
           setScreen('match');
-          request<Movie>(`/movies/${payload.movie_id}`, {}, token)
-            .then(setMatchMovie)
+          request<Movie[]>(`/sessions/${payload.session_id}/movies?limit=50`, {}, token)
+            .then(movies => setMatchMovie(movies.find(movie => movie.id === payload.movie_id) ?? null))
             .catch(() => undefined);
         }
         if (msg.type === 'SESSION_FINISHED') setSession(prev => prev ? { ...prev, status: 'FINISHED' } : prev);
@@ -175,8 +93,7 @@ function App() {
   };
 
   const logout = () => {
-    localStorage.removeItem('mm_token');
-    localStorage.removeItem('mm_refresh');
+    clearTokens();
     setToken('');
     setUser(null);
     setRoom(null);
@@ -199,8 +116,7 @@ function App() {
         method: 'POST',
         body: JSON.stringify({ email: data.email, password: data.password }),
       });
-      localStorage.setItem('mm_token', result.access_token);
-      localStorage.setItem('mm_refresh', result.refresh_token);
+      saveTokens(result.access_token, result.refresh_token);
       setToken(result.access_token);
       const me = await request<User>('/auth/me', {}, result.access_token);
       setUser(me);
@@ -410,26 +326,14 @@ function MovieSession({ token, session, room, onMatch, onFinish }: { token: stri
 function MovieCard({ movie, busy, onVote }: { movie: Movie; busy: boolean; onVote: (value: VoteValue) => void }) {
   const embedUrl = getYouTubeEmbedUrl(movie.trailer_url);
   return <div className="movie-stage-enhanced">
-    <div className="movie-left-stack">
-      <section className="trailer-window">
-        <div className="trailer-frame-wrap">
-          {embedUrl ? <iframe className="trailer-frame" src={`${embedUrl}?autoplay=1&mute=1&controls=1&playsinline=1&rel=0&modestbranding=1`} title={`${movie.title} trailer`} allow="autoplay; encrypted-media; picture-in-picture" referrerPolicy="strict-origin-when-cross-origin" /> : movie.backdrop_url ? <img className="trailer-fallback" src={movie.backdrop_url} alt="" /> : movie.poster_url ? <img className="trailer-fallback" src={movie.poster_url} alt="" /> : <div className="poster-fallback">{movie.title}</div>}
-          <div className="trailer-status">TRAILER · AUTOPLAY · MUTED</div>
-        </div>
-      </section>
-      <section className="vote-window">
-        <div className="vote-window-head">
-          <span className="info-label">YOUR REACTION</span>
-          <span className="vote-window-hint">Выберите действие</span>
-        </div>
-        <div className="movie-votes">
-          <button className="vote no tooltip-btn" data-tooltip="Не нравится" disabled={busy} onClick={() => onVote('DISLIKE')} aria-label="Не нравится">✕</button>
-          <button className="vote skip tooltip-btn" data-tooltip="Пропустить фильм" disabled={busy} onClick={() => onVote('SKIP')} aria-label="Пропустить">↗</button>
-          <button className="vote yes tooltip-btn" data-tooltip="Нравится" disabled={busy} onClick={() => onVote('LIKE')} aria-label="Нравится">♥</button>
-        </div>
-      </section>
-    </div>
-    <aside className="movie-info-enhanced"><div className="info-title-block"><span className="info-label">NOW PLAYING</span><h2>{movie.title}</h2><span className="info-meta">{movie.release_date?.slice(0, 4) ?? '—'} · {movie.vote_average ? movie.vote_average.toFixed(1) : '—'} / 10</span></div><div className="info-label">ABOUT THIS FILM</div><p className="movie-description">{movie.overview || 'Описание пока недоступно.'}</p><div className="genre-row">{movie.genres.slice(0, 5).map(g => <span className="genre-chip" key={g.id}>{g.name}</span>)}</div><div className="info-stat-grid"><div><span>POPULARITY</span><strong>{movie.popularity ? movie.popularity.toFixed(0) : '—'}</strong></div><div><span>VOTES</span><strong>{movie.vote_count?.toLocaleString() ?? '—'}</strong></div></div>{movie.trailer_url && <a className="trailer-link" href={movie.trailer_url} target="_blank" rel="noreferrer">Открыть трейлер отдельно ↗</a>}<div className="explore-note"><span>WHY THIS FILM</span><strong>Часть выдачи специально выходит за пределы ваших любимых жанров.</strong></div></aside>
+    <section className="movie-visual-card">
+      <div className="trailer-frame-wrap">
+        {embedUrl ? <iframe className="trailer-frame" src={`${embedUrl}?autoplay=1&mute=1&controls=1&playsinline=1&rel=0&modestbranding=1`} title={`${movie.title} trailer`} allow="autoplay; encrypted-media; picture-in-picture" referrerPolicy="strict-origin-when-cross-origin" /> : movie.backdrop_url ? <img className="trailer-fallback" src={movie.backdrop_url} alt="" /> : movie.poster_url ? <img className="trailer-fallback" src={movie.poster_url} alt="" /> : <div className="poster-fallback">{movie.title}</div>}
+        <div className="trailer-status">TRAILER · AUTOPLAY · MUTED</div>
+      </div>
+      <div className="movie-votes"><button className="vote no" disabled={busy} onClick={() => onVote('DISLIKE')} aria-label="Не нравится">✕</button><button className="vote skip" disabled={busy} onClick={() => onVote('SKIP')} aria-label="Пропустить">↗</button><button className="vote yes" disabled={busy} onClick={() => onVote('LIKE')} aria-label="Нравится">♥</button></div>
+    </section>
+    <aside className="movie-info-enhanced"><div className="info-title-block"><span className="info-label">NOW PLAYING</span><h2>{movie.title}</h2><div className="tag-row">{movie.genres.slice(0, 4).map(g => <span className="tag dark" key={g.id}>{g.name}</span>)}</div><span className="info-meta">{movie.release_date?.slice(0, 4) ?? '—'} · {movie.vote_average ? movie.vote_average.toFixed(1) : '—'} / 10</span></div><div className="info-label">ABOUT THIS FILM</div><p>{movie.overview || 'Описание пока недоступно.'}</p><div className="info-stat-grid"><div><span>POPULARITY</span><strong>{movie.popularity ? movie.popularity.toFixed(0) : '—'}</strong></div><div><span>VOTES</span><strong>{movie.vote_count?.toLocaleString() ?? '—'}</strong></div></div>{movie.trailer_url && <a className="trailer-link" href={movie.trailer_url} target="_blank" rel="noreferrer">Открыть трейлер отдельно ↗</a>}<div className="explore-note"><span>WHY THIS FILM</span><strong>Часть выдачи специально выходит за пределы ваших любимых жанров.</strong></div></aside>
   </div>;
 }
 
@@ -492,20 +396,6 @@ function calculateAge(birthDate: string): number {
 
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return <div className="modal-backdrop"><div className="modal-card"><div className="modal-top"><h2>{title}</h2><button onClick={onClose}>×</button></div>{children}</div></div>;
-}
-
-function getYouTubeEmbedUrl(url: string | null): string | null {
-  if (!url) return null;
-  try {
-    const parsed = new URL(url);
-    if (parsed.hostname.includes('youtu.be')) return `https://www.youtube.com/embed/${parsed.pathname.slice(1)}`;
-    if (parsed.hostname.includes('youtube.com')) {
-      const id = parsed.searchParams.get('v');
-      if (id) return `https://www.youtube.com/embed/${id}`;
-      if (parsed.pathname.startsWith('/embed/')) return `https://www.youtube.com${parsed.pathname}`;
-    }
-  } catch { return null; }
-  return null;
 }
 
 async function extractPalette(url: string): Promise<Palette> {
