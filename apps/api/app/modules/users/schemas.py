@@ -1,5 +1,7 @@
 from uuid import UUID
 
+from datetime import date
+
 from pydantic import BaseModel, EmailStr, Field
 
 
@@ -13,5 +15,10 @@ class UserResponse(BaseModel):
     id: UUID
     username: str
     email: EmailStr
+    birth_date: date | None = None
 
     model_config = {"from_attributes": True}
+
+
+class UpdateAgeRequest(BaseModel):
+    birth_date: date = Field(description="User date of birth")

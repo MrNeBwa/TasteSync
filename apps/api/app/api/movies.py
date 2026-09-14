@@ -1,8 +1,11 @@
+from datetime import date
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.dependencies import get_current_user
 from app.db.session import get_db_session
 from app.models.movie import Movie
+from app.models.user import User
 from app.modules.movies.schemas import GenreResponse, MovieResponse
 from app.modules.movies.service import MovieService
 from app.providers.tmdb import TMDBProvider
@@ -22,6 +25,7 @@ def _to_response(movie: Movie) -> MovieResponse:
         popularity=movie.popularity,
         vote_average=movie.vote_average,
         vote_count=movie.vote_count,
+        is_adult=movie.is_adult,
         trailer_url=movie.primary_trailer_url,
         genres=[GenreResponse(id=mg.genre.id, name=mg.genre.name) for mg in movie.genres],
     )
@@ -30,9 +34,15 @@ def _to_response(movie: Movie) -> MovieResponse:
 @router.get("", response_model=list[MovieResponse])
 async def list_movies(
     limit: int = Query(default=30, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> list[MovieResponse]:
-    movies = await MovieRepository(session).list_popular(limit=limit)
+    adult_allowed = current_user.birth_date is not None
+    if current_user.birth_date is not None:
+        today = date.today()
+        age = today.year - current_user.birth_date.year - ((today.month, today.day) < (current_user.birth_date.month, current_user.birth_date.day))
+        adult_allowed = age >= 18
+    movies = await MovieRepository(session).list_popular(limit=limit, include_adult=adult_allowed)
     return [_to_response(movie) for movie in movies]
 
 

@@ -1,3 +1,4 @@
+from datetime import date
 from uuid import UUID
 
 from sqlalchemy import select
@@ -22,5 +23,11 @@ class UserRepository:
     async def create_user(self, *, username: str, email: str, password_hash: str) -> User:
         user = User(username=username, email=email, password_hash=password_hash)
         self.session.add(user)
+        await self.session.flush()
+        return user
+
+
+    async def update_birth_date(self, user: User, birth_date: date) -> User:
+        user.birth_date = birth_date
         await self.session.flush()
         return user

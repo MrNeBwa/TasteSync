@@ -1,3 +1,4 @@
+from datetime import date
 from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field
@@ -28,5 +29,6 @@ class AuthUserResponse(BaseModel):
     id: UUID
     username: str
     email: EmailStr
+    birth_date: date | None = None
 
     model_config = {"from_attributes": True}

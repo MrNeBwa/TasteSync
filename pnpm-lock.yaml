@@ -22,7 +22,7 @@ importers:
         version: 53.0.27(@babel/core@7.29.7)(@expo/metro-runtime@5.0.5(react-native@0.79.7(@babel/core@7.29.7)(@types/react@19.3.0)(react@19.3.0)))(react-native@0.79.7(@babel/core@7.29.7)(@types/react@19.3.0)(react@19.3.0))(react@19.3.0)
       expo-router:
         specifier: ^5.1.4
-        version: 5.1.11(6f6911869321206804e10769b1f26649)
+        version: 5.1.11(b10d85e77820bc49c3379a9a41d14c0f)
       react:
         specifier: ^19.0.0
         version: 19.3.0
@@ -39,9 +39,6 @@ importers:
 
   apps/web:
     dependencies:
-      '@movie-match/types':
-        specifier: workspace:*
-        version: link:../../packages/types
       '@tanstack/react-query':
         specifier: ^5.87.0
         version: 5.102.8(react@19.3.0)
@@ -5509,7 +5506,7 @@ snapshots:
     dependencies:
       invariant: 2.2.4
 
-  expo-router@5.1.11(6f6911869321206804e10769b1f26649):
+  expo-router@5.1.11(b10d85e77820bc49c3379a9a41d14c0f):
     dependencies:
       '@expo/metro-runtime': 5.0.5(react-native@0.79.7(@babel/core@7.29.7)(@types/react@19.3.0)(react@19.3.0))
       '@expo/schema-utils': 0.1.9
@@ -5520,7 +5517,7 @@ snapshots:
       '@react-navigation/native-stack': 7.18.10(@react-navigation/native@7.3.18(react-native@0.79.7(@babel/core@7.29.7)(@types/react@19.3.0)(react@19.3.0))(react@19.3.0))(react-native-safe-area-context@5.9.1(react-native@0.79.7(@babel/core@7.29.7)(@types/react@19.3.0)(react@19.3.0))(react@19.3.0))(react-native-screens@4.28.0(react-native@0.79.7(@babel/core@7.29.7)(@types/react@19.3.0)(react@19.3.0))(react@19.3.0))(react-native@0.79.7(@babel/core@7.29.7)(@types/react@19.3.0)(react@19.3.0))(react@19.3.0)
       client-only: 0.0.1
       expo: 53.0.27(@babel/core@7.29.7)(@expo/metro-runtime@5.0.5(react-native@0.79.7(@babel/core@7.29.7)(@types/react@19.3.0)(react@19.3.0)))(react-native@0.79.7(@babel/core@7.29.7)(@types/react@19.3.0)(react@19.3.0))(react@19.3.0)
-      expo-constants: 17.1.8(expo@53.0.27(@babel/core@7.29.7)(@expo/metro-runtime@5.0.5(react-native@0.79.7(@babel/core@7.29.7)(@types/react@19.3.0)(react@19.3.0)))(react-native@0.79.7(@babel/core@7.29.7)(@types/react@19.3.0)(react@19.3.0))(react@19.3.0))(react-native@0.79.7(@babel/core@7.29.7)(@types/react@19.3.0)(react@19.3.0))
+      expo-constants: 57.0.18(expo@53.0.27(@babel/core@7.29.7)(@expo/metro-runtime@5.0.5(react-native@0.79.7(@babel/core@7.29.7)(@types/react@19.3.0)(react@19.3.0)))(react-native@0.79.7(@babel/core@7.29.7)(@types/react@19.3.0)(react@19.3.0))(react@19.3.0))(react-native@0.79.7(@babel/core@7.29.7)(@types/react@19.3.0)(react@19.3.0))
       expo-linking: 57.0.10(expo@53.0.27(@babel/core@7.29.7)(@expo/metro-runtime@5.0.5(react-native@0.79.7(@babel/core@7.29.7)(@types/react@19.3.0)(react@19.3.0)))(react-native@0.79.7(@babel/core@7.29.7)(@types/react@19.3.0)(react@19.3.0))(react@19.3.0))(react-native@0.79.7(@babel/core@7.29.7)(@types/react@19.3.0)(react@19.3.0))(react@19.3.0)
       invariant: 2.2.4
       react-fast-compare: 3.2.2

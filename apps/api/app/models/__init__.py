@@ -5,8 +5,9 @@ from app.models.room_member import RoomMember, RoomMemberRole
 from app.models.session import MovieSession, SessionStatus
 from app.models.user import User
 from app.models.vote import Vote, VoteValue
+from app.models.match import Match
 
 __all__ = [
     "Genre", "Movie", "MovieGenre", "Room", "RoomStatus", "RoomMember",
-    "RoomMemberRole", "MovieSession", "SessionStatus", "User", "Vote", "VoteValue",
+    "RoomMemberRole", "MovieSession", "SessionStatus", "User", "Vote", "VoteValue", "Match",
 ]

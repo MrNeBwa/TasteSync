@@ -30,6 +30,7 @@ class ProviderMovie:
     popularity: float | None
     vote_average: float | None
     vote_count: int | None
+    is_adult: bool
     genres: list[ProviderGenre]
     trailers: list[ProviderVideo]
 

@@ -35,6 +35,7 @@ class MovieService:
             popularity=movie.popularity,
             vote_average=movie.vote_average,
             vote_count=movie.vote_count,
+            is_adult=movie.is_adult,
             primary_trailer_url=trailer_url,
             genres=[(g.provider_id, g.name) for g in movie.genres],
         )

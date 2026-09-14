@@ -24,6 +24,9 @@ from app.modules.rooms.service import (
     UserNotFoundError,
 )
 from app.repositories.room_repository import RoomRepository
+from app.repositories.session_repository import SessionRepository
+from app.repositories.movie_repository import MovieRepository
+from app.modules.sessions.service import CannotStartSessionError, MovieSessionService, SessionNotFoundError
 from app.websocket.manager import manager
 
 router = APIRouter(prefix="/rooms", tags=["rooms"])
@@ -143,33 +146,41 @@ async def set_ready(
     return ReadyResponse(room=detail, is_ready=ready)
 
 
-@router.post("/{room_id}/start", response_model=RoomDetailResponse)
+@router.post("/{room_id}/start")
 async def start_room(
     room_id: UUID,
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
-) -> RoomDetailResponse:
-    service = RoomService(RoomRepository(session))
+) -> dict:
+    svc = MovieSessionService(
+        SessionRepository(session),
+        RoomRepository(session),
+        MovieRepository(session),
+    )
     try:
-        room = await service.start_session(room_id=room_id, user_id=current_user.id)
+        movie_session = await svc.create_for_room(room_id=room_id, user_id=current_user.id)
         await session.commit()
-        room = await service.get_room_for_member(room_id=room_id, user_id=current_user.id)
-    except RoomNotFoundError as exc:
+    except SessionNotFoundError as exc:
         await session.rollback()
         raise HTTPException(status_code=404, detail="Room not found") from exc
-    except NotOwnerError as exc:
-        await session.rollback()
-        raise HTTPException(status_code=403, detail="Only the room owner can start the session") from exc
-    except InvalidRoomStateError as exc:
+    except CannotStartSessionError as exc:
         await session.rollback()
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
-    detail = room_detail(room)
     await manager.broadcast(
         room_id,
-        {"type": "SESSION_STARTED", "room_id": str(room_id), "payload": detail.model_dump(mode="json")},
+        {
+            "type": "SESSION_STARTED",
+            "room_id": str(room_id),
+            "payload": {"session_id": str(movie_session.id)},
+        },
     )
-    return detail
+    return {
+        "session_id": movie_session.id,
+        "room_id": movie_session.room_id,
+        "status": movie_session.status,
+        "created_at": movie_session.created_at,
+    }
 
 
 @router.delete("/{room_id}/members/me", status_code=status.HTTP_204_NO_CONTENT)

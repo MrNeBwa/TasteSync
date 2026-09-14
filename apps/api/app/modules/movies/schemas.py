@@ -19,5 +19,6 @@ class MovieResponse(BaseModel):
     popularity: float | None
     vote_average: float | None
     vote_count: int | None
+    is_adult: bool
     trailer_url: str | None
     genres: list[GenreResponse]

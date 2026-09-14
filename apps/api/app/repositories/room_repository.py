@@ -18,20 +18,26 @@ class RoomRepository:
     async def get_user(self, user_id: UUID) -> User | None:
         return await self.session.get(User, user_id)
 
-    async def get_by_id(self, room_id: UUID, *, with_members: bool = False) -> Room | None:
+    async def get_by_id(
+        self,
+        room_id: UUID,
+        *,
+        with_members: bool = False,
+        for_update: bool = False,
+    ) -> Room | None:
         stmt = select(Room).where(Room.id == room_id)
         if with_members:
-            stmt = stmt.options(
-                selectinload(Room.members).selectinload(RoomMember.user),
-            )
+            stmt = stmt.options(selectinload(Room.members).selectinload(RoomMember.user))
+        if for_update:
+            stmt = stmt.with_for_update()
         return await self.session.scalar(stmt)
 
-    async def get_by_code(self, code: str, *, with_members: bool = False) -> Room | None:
+    async def get_by_code(self, code: str, *, with_members: bool = False, for_update: bool = False) -> Room | None:
         stmt = select(Room).where(Room.code == code)
         if with_members:
-            stmt = stmt.options(
-                selectinload(Room.members).selectinload(RoomMember.user),
-            )
+            stmt = stmt.options(selectinload(Room.members).selectinload(RoomMember.user))
+        if for_update:
+            stmt = stmt.with_for_update()
         return await self.session.scalar(stmt)
 
     async def code_exists(self, code: str) -> bool:
@@ -39,11 +45,12 @@ class RoomRepository:
         return result is not None
 
     async def get_membership(self, room_id: UUID, user_id: UUID) -> RoomMember | None:
-        stmt = select(RoomMember).where(
-            RoomMember.room_id == room_id,
-            RoomMember.user_id == user_id,
+        return await self.session.scalar(
+            select(RoomMember).where(
+                RoomMember.room_id == room_id,
+                RoomMember.user_id == user_id,
+            )
         )
-        return await self.session.scalar(stmt)
 
     async def list_members(self, room_id: UUID) -> list[RoomMember]:
         stmt = (
@@ -52,31 +59,31 @@ class RoomRepository:
             .options(selectinload(RoomMember.user))
             .order_by(RoomMember.joined_at.asc())
         )
-        result = await self.session.scalars(stmt)
-        return list(result)
+        return list(await self.session.scalars(stmt))
 
-    async def create_room(self, *, name: str, owner: User) -> Room:
-        for _ in range(10):
-            code = "".join(choice(ascii_uppercase + digits) for _ in range(6))
-            if not await self.code_exists(code):
-                break
-        else:
-            raise RuntimeError("Could not generate a unique room code")
-
-        room = Room(name=name, code=code, owner_id=owner.id)
-        room.members.append(
-            RoomMember(user_id=owner.id, role=RoomMemberRole.OWNER, is_ready=False)
-        )
-        self.session.add(room)
-        await self.session.flush()
-        return room
-
-    async def add_member(self, *, room: Room, user: User) -> RoomMember:
-        member = RoomMember(room_id=room.id, user_id=user.id, role=RoomMemberRole.MEMBER)
-        self.session.add(member)
-        await self.session.flush()
-        return member
+    async def add_member(self, *, room: Room, user: User, role: RoomMemberRole = RoomMemberRole.MEMBER) -> RoomMember:
+        membership = RoomMember(room_id=room.id, user_id=user.id, role=role)
+        self.session.add(membership)
+        return membership
 
     async def remove_member(self, membership: RoomMember) -> None:
         await self.session.delete(membership)
-        await self.session.flush()
+
+    async def create_room(self, *, name: str, owner: User) -> Room:
+        alphabet = ascii_uppercase + digits
+        for _ in range(10):
+            code = "".join(choice(alphabet) for _ in range(6))
+            if not await self.code_exists(code):
+                room = Room(name=name, code=code, owner_id=owner.id)
+                self.session.add(room)
+                await self.session.flush()
+                self.session.add(
+                    RoomMember(
+                        room_id=room.id,
+                        user_id=owner.id,
+                        role=RoomMemberRole.OWNER,
+                    )
+                )
+                await self.session.flush()
+                return room
+        raise RuntimeError("Could not generate a unique room code")

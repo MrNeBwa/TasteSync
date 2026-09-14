@@ -46,7 +46,7 @@ class RoomService:
         return await self.repository.create_room(name=normalized_name, owner=owner)
 
     async def join_room(self, *, code: str, user_id: UUID) -> Room:
-        room = await self.repository.get_by_code(code.strip().upper())
+        room = await self.repository.get_by_code(code.strip().upper(), for_update=True)
         if room is None:
             raise RoomNotFoundError
         if room.status not in {RoomStatus.WAITING, RoomStatus.READY}:
@@ -62,7 +62,7 @@ class RoomService:
         return room
 
     async def get_room_for_member(self, *, room_id: UUID, user_id: UUID) -> Room:
-        room = await self.repository.get_by_id(room_id, with_members=True)
+        room = await self.repository.get_by_id(room_id, with_members=True, for_update=True)
         if room is None:
             raise RoomNotFoundError
         if await self.repository.get_membership(room_id, user_id) is None:
