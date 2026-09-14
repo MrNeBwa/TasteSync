@@ -1,5 +1,7 @@
 from datetime import date
-from fastapi import APIRouter, Depends, Query
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user
@@ -44,6 +46,18 @@ async def list_movies(
         adult_allowed = age >= 18
     movies = await MovieRepository(session).list_popular(limit=limit, include_adult=adult_allowed)
     return [_to_response(movie) for movie in movies]
+
+
+@router.get("/{movie_id}", response_model=MovieResponse)
+async def get_movie(
+    movie_id: UUID,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> MovieResponse:
+    movie = await MovieRepository(session).get_by_id(movie_id)
+    if movie is None:
+        raise HTTPException(status_code=404, detail="Movie not found")
+    return _to_response(movie)
 
 
 @router.post("/sync-popular")

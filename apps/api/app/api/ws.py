@@ -5,7 +5,6 @@ from sqlalchemy import select
 from app.core.security import decode_token
 from app.db.session import AsyncSessionLocal
 from app.models.room_member import RoomMember
-from app.repositories.room_repository import RoomRepository
 from app.websocket.manager import manager
 
 router = APIRouter(tags=["websocket"])

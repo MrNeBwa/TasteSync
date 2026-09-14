@@ -11,6 +11,7 @@ from app.api.users import router as users_router
 from app.api.movies import router as movies_router
 from app.api.ws import router as ws_router
 from app.api.sessions import router as sessions_router
+from app.core.config import get_settings
 from app.db.session import close_db
 
 
@@ -20,21 +21,24 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     await close_db()
 
 
-app = FastAPI(title="Movie Match API", version="1.3.0", lifespan=lifespan)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-app.include_router(health_router, prefix="/api")
-app.include_router(auth_router, prefix="/api")
-app.include_router(rooms_router, prefix="/api")
-app.include_router(users_router, prefix="/api")
-app.include_router(movies_router, prefix="/api")
-app.include_router(ws_router)
-app.include_router(sessions_router, prefix="/api")
+def create_app() -> FastAPI:
+    settings = get_settings()
+    application = FastAPI(title=settings.app_name, version="1.3.0", lifespan=lifespan)
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    application.include_router(health_router, prefix="/api")
+    application.include_router(auth_router, prefix="/api")
+    application.include_router(rooms_router, prefix="/api")
+    application.include_router(users_router, prefix="/api")
+    application.include_router(movies_router, prefix="/api")
+    application.include_router(ws_router)
+    application.include_router(sessions_router, prefix="/api")
+    return application
+
+
+app = create_app()

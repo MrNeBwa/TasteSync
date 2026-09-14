@@ -12,7 +12,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@movie-match/types": "workspace:*",
     "expo": "^53.0.20",
     "expo-router": "^5.1.4",
     "expo-secure-store": "~14.2.4",
@@ -21,6 +20,7 @@
     "react-native-webview": "13.13.5"
   },
   "devDependencies": {
+    "@types/node": "^22.14.0",
     "@types/react": "^19.0.10",
     "typescript": "^5.8.3"
   }
