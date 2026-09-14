@@ -1,0 +1,16 @@
+node_modules
+.pnpm-store
+dist
+build
+.expo
+.env
+.env.*
+!.env.example
+__pycache__
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.venv
+*.pyc
+coverage
+.DS_Store

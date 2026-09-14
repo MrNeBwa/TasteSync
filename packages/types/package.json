@@ -1,0 +1,8 @@
+{
+  "name": "@movie-match/types",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {"build": "tsc", "lint": "tsc --noEmit", "typecheck": "tsc --noEmit", "test": "vitest run"},
+  "devDependencies": {"typescript": "^5.9.2"}
+}
