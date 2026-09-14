@@ -12,7 +12,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@movie-match/types": "workspace:*",
     "expo": "^53.0.20",
     "expo-router": "^5.1.4",
     "expo-secure-store": "~14.2.4",

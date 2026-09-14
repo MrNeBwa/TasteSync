@@ -14,9 +14,6 @@ importers:
 
   apps/mobile:
     dependencies:
-      '@movie-match/types':
-        specifier: workspace:*
-        version: link:../../packages/types
       expo:
         specifier: ^53.0.20
         version: 53.0.27(@babel/core@7.29.7)(@expo/metro-runtime@5.0.5(react-native@0.79.7(@babel/core@7.29.7)(@types/react@19.3.0)(react@19.3.0)))(react-native-webview@13.13.5(react-native@0.79.7(@babel/core@7.29.7)(@types/react@19.3.0)(react@19.3.0))(react@19.3.0))(react-native@0.79.7(@babel/core@7.29.7)(@types/react@19.3.0)(react@19.3.0))(react@19.3.0)
@@ -82,12 +79,6 @@ importers:
       vitest:
         specifier: ^3.2.4
         version: 3.2.7(@types/node@26.5.1)(lightningcss@1.27.0)(terser@5.51.2)
-
-  packages/types:
-    devDependencies:
-      typescript:
-        specifier: ^5.9.2
-        version: 5.9.3
 
 packages:
 

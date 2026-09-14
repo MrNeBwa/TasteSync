@@ -18,7 +18,6 @@ from app.modules.rooms.service import (
     CannotLeaveRoomError,
     InvalidRoomStateError,
     NotMemberError,
-    NotOwnerError,
     RoomNotFoundError,
     RoomService,
     UserNotFoundError,

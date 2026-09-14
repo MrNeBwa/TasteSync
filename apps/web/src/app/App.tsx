@@ -29,11 +29,51 @@ const API_BASE = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000/api';
 const WS_BASE = API_BASE.replace(/^http/, 'ws').replace(/\/api\/?$/, '');
 const FALLBACK_PALETTE: Palette = { primary: '#efbd42', secondary: '#e5679f', glow: 'rgba(239,189,66,.28)', ink: '#121212' };
 
+let onTokenRefreshed: ((token: string) => void) | null = null;
+
+function setTokenRefreshListener(listener: ((token: string) => void) | null) {
+  onTokenRefreshed = listener;
+}
+
+async function refreshAccessToken(): Promise<string> {
+  const refresh = localStorage.getItem('mm_refresh');
+  if (!refresh) throw new Error('No refresh token');
+  const res = await fetch(`${API_BASE}/auth/refresh`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: refresh }),
+  });
+  const text = await res.text();
+  let body: unknown = null;
+  try { body = text ? JSON.parse(text) : null; } catch { body = text; }
+  if (!res.ok) {
+    const detail = typeof body === 'object' && body && 'detail' in body ? String((body as { detail: unknown }).detail) : `HTTP ${res.status}`;
+    throw new Error(detail);
+  }
+  const result = body as { access_token: string; refresh_token: string };
+  localStorage.setItem('mm_token', result.access_token);
+  localStorage.setItem('mm_refresh', result.refresh_token);
+  return result.access_token;
+}
+
 async function request<T>(path: string, options: RequestInit = {}, token?: string): Promise<T> {
-  const headers = new Headers(options.headers);
-  if (options.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
-  if (token) headers.set('Authorization', `Bearer ${token}`);
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  const doFetch = async (authToken?: string): Promise<Response> => {
+    const headers = new Headers(options.headers);
+    if (options.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+    if (authToken) headers.set('Authorization', `Bearer ${authToken}`);
+    return fetch(`${API_BASE}${path}`, { ...options, headers });
+  };
+
+  let res = await doFetch(token);
+  if (res.status === 401 && token) {
+    try {
+      const next = await refreshAccessToken();
+      onTokenRefreshed?.(next);
+      res = await doFetch(next);
+    } catch {
+      // Refresh failed; the response below reports the original 401.
+    }
+  }
   const text = await res.text();
   let body: unknown = null;
   try { body = text ? JSON.parse(text) : null; } catch { body = text; }
@@ -58,6 +98,8 @@ function App() {
   const [ageSaving, setAgeSaving] = useState(false);
 
   const authenticated = Boolean(token && user);
+
+  useEffect(() => { setTokenRefreshListener((next) => setToken(next)); }, []);
 
   useEffect(() => {
     if (!token) {
@@ -101,8 +143,8 @@ function App() {
         if (msg.type === 'MATCH_FOUND' && msg.payload && typeof msg.payload === 'object') {
           const payload = msg.payload as { movie_id: string; session_id: string };
           setScreen('match');
-          request<Movie[]>(`/sessions/${payload.session_id}/movies?limit=50`, {}, token)
-            .then(movies => setMatchMovie(movies.find(movie => movie.id === payload.movie_id) ?? null))
+          request<Movie>(`/movies/${payload.movie_id}`, {}, token)
+            .then(setMatchMovie)
             .catch(() => undefined);
         }
         if (msg.type === 'SESSION_FINISHED') setSession(prev => prev ? { ...prev, status: 'FINISHED' } : prev);
