@@ -18,7 +18,7 @@ export default function Home() {
     <View style={styles.card}><Text style={styles.kicker}>ПРИСОЕДИНИТЬСЯ</Text><Text style={styles.fieldLabel}>Код комнаты</Text><TextInput value={code} onChangeText={setCode} placeholder="PA4IQO" autoCapitalize="characters" style={styles.input} /><Button variant="secondary" onPress={joinRoom}>Войти в комнату</Button></View>
     {!!error && <Text style={styles.error}>{error}</Text>}
     <Button variant="secondary" onPress={()=>router.push('/settings')}>Настройки</Button>
-    <Button variant="danger" onPress={logout}>Выйти</Button>
+    <Button variant="danger" onPress={async()=>{await logout();router.replace('/auth')}}>Выйти</Button>
   </View></SafeAreaView>;
 }
 const styles=StyleSheet.create({screen:{flex:1,backgroundColor:COLORS.paper},top:{height:66,backgroundColor:COLORS.yellow,borderBottomWidth:2,borderBottomColor:COLORS.ink,alignItems:'center',justifyContent:'center',flexDirection:'row'},greeting:{fontSize:20,fontWeight:'900'},avatar:{position:'absolute',right:16,fontSize:34,color:COLORS.pink},body:{padding:20,gap:16},title:{fontSize:42,fontWeight:'900',textAlign:'center',marginVertical:16,letterSpacing:-1.5},card:{backgroundColor:'#fff',borderWidth:2,borderColor:COLORS.ink,borderRadius:22,padding:16,gap:10},kicker:{fontSize:11,letterSpacing:2,color:'#777',fontWeight:'700'},fieldLabel:{fontSize:14,fontWeight:'800'},input:{height:50,borderWidth:2,borderColor:'#BDBDBD',borderRadius:14,paddingHorizontal:12,fontSize:16,backgroundColor:'#FAF9F6'},error:{color:'#9A2029',backgroundColor:'#FFE0E4',padding:12,borderRadius:12}}

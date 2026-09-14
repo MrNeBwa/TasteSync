@@ -11,7 +11,10 @@ export default function RoomScreen(){
   const [room,setRoom]=useState<Room|null>(null); const [error,setError]=useState(''); const [starting,setStarting]=useState(false);
   async function load(){try{setRoom(await request<Room>(`/rooms/${id}`,{},token))}catch(e){setError(e instanceof Error?e.message:'Ошибка комнаты')}}
   useEffect(()=>{load()},[id]);
-  useEffect(()=>{if(!room||!token)return; const ws=new WebSocket(`${WS_URL}/ws/rooms/${room.id}?token=${encodeURIComponent(token)}`); ws.onmessage=(ev)=>{try{const m=JSON.parse(ev.data); if(m.type==='ROOM_READY_CHANGED'&&m.payload)setRoom(m.payload); if(m.type==='SESSION_STARTED'&&m.payload)router.replace(`/session/${m.payload.session_id}`);}catch{}}; const timer=setInterval(load,5000); return()=>{clearInterval(timer);ws.close();}},[room?.id,token]);
+  useEffect(()=>{if(!room||!token)return; let closed=false; let ws:WebSocket|null=null; let reconnectTimer:ReturnType<typeof setTimeout>|null=null;
+    const connect=()=>{ws=new WebSocket(`${WS_URL}/ws/rooms/${room.id}?token=${encodeURIComponent(token)}`); ws.onmessage=(ev)=>{try{const m=JSON.parse(ev.data); if(m.type==='ROOM_READY_CHANGED'&&m.payload)setRoom(m.payload); if(m.type==='SESSION_STARTED'&&m.payload)router.replace(`/session/${m.payload.session_id}`);}catch{}}; ws.onclose=()=>{if(!closed)reconnectTimer=setTimeout(connect,4000);};};
+    connect(); const timer=setInterval(load,5000); return()=>{closed=true; if(reconnectTimer)clearTimeout(reconnectTimer); clearInterval(timer); ws?.close();};
+  },[room?.id,token]);
   async function ready(v:boolean){try{const r=await request<{room:Room}>(`/rooms/${id}/ready?ready=${v}`,{method:'PATCH'},token);setRoom(r.room)}catch(e){setError(e instanceof Error?e.message:'Не удалось изменить готовность')}}
   async function start(){setStarting(true);setError('');try{const s=await request<Session>(`/rooms/${id}/start`,{method:'POST'},token); router.replace(`/session/${s.id}`)}catch(e){setError(e instanceof Error?e.message:'Не удалось начать сессию')}finally{setStarting(false)}}
   if(!room)return error?<View style={styles.center}><Text style={styles.error}>{error}</Text></View>:<Loading/>;
