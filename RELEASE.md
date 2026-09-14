@@ -1,47 +1,33 @@
-# Movie Match — Production Release Notes
+# TasteSync v1.7
 
-## Versions
+## Networking architecture
 
-- Web: v1.3.1 (`apps/web`)
-- Mobile: v0.2.0 (`apps/mobile`)
-- Backend: v1.3.0 (`apps/api`)
-- DB migrations: Alembic head
+### Web development
+The browser uses same-origin relative paths:
 
-## Repo layout
+- REST: `/api/...`
+- WebSocket: `/ws/...`
 
-`apps/web` — веб-клиент, `apps/mobile` — нативный клиент (Expo/React Native),
-`apps/api` — единый бэкенд для обоих клиентов. Все части одного релиза и должны
-обновляться вместе.
+Vite proxies both paths to the local FastAPI instance at `127.0.0.1:8000`.
 
-## Local startup
+This is deliberate: the browser never performs a cross-origin request in web development, so LAN and virtual-interface hostnames do not require a matching CORS rule.
 
-```bash
-docker compose -f infra/docker-compose.yml up -d
-cd apps/api && uv sync && uv run alembic upgrade head && uv run uvicorn app.main:app --reload
-npx pnpm@10.15.0 install
-npx pnpm@10.15.0 dev:web     # веб на http://localhost:5173
-npx pnpm@10.15.0 dev:mobile  # Expo dev server
+Examples:
+
+```text
+http://localhost:5173      -> /api -> http://127.0.0.1:8000/api
+http://192.168.100.7:5173  -> /api -> http://127.0.0.1:8000/api
+http://10.214.151.154:5173 -> /api -> http://127.0.0.1:8000/api
 ```
 
-## Production checklist
+The URL visible to the phone does not need to equal the API hostname because Vite is acting as the same-origin reverse proxy.
 
-- [ ] Задать `JWT_SECRET_KEY` (≥32 случайных байтов) и `TMDB_API_TOKEN` в `.env`;
-- [ ] Указать `CORS_ORIGINS` под продовый домен веба;
-- [ ] Поднять `infra/docker-compose.yml` (PostgreSQL, Redis) или managed-сервисы;
-- [ ] `uv run alembic upgrade head`;
-- [ ] Собрать веб: `pnpm --filter @movie-match/web build`;
-- [ ] Собрать мобайл: `npx expo prebuild` + Android/iOS сборка (см. apps/mobile/README.md);
-- [ ] Прогнать `./scripts/verify-release.sh`.
+### Mobile / external clients
+Mobile apps and direct API clients do not use the browser proxy. Configure their API/WS base URL to a reachable laptop address, e.g. `192.168.x.x` or `10.x.x.x`.
 
-## Chevron rule (contract)
+### CORS
+Local FastAPI mode allows CORS for direct development clients. Production must use a strict allowlist.
 
-UPD: два клиента потребляют один HTTP/JSON контракт бэкенда. Любое изменение поля
-ответа должно обновлять единовременно:
+## Upgrade
 
-1. бэкенд Pydantic response schema;
-2. сериализатор эндпоинта;
-3. тип/потребителя в `apps/web` и `apps/mobile`;
-4. контрактный тест (`apps/api/tests/test_api_contract.py`).
-
-Поле `MovieResponse.is_adult` покрыто этим правилом специально: ранее оно
-вызывало runtime 500 на обоих клиентах.
+Do not overwrite the backend when doing a web-only update. The repository is intentionally split so `apps/web` can be replaced independently.

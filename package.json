@@ -9,9 +9,10 @@
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
-    "verify": "pnpm typecheck && pnpm test"
+    "verify": "pnpm typecheck && pnpm test && ./scripts/verify-networking.sh"
   },
   "devDependencies": {
     "turbo": "^2.5.6"
-  }
+  },
+  "version": "1.7.0"
 }

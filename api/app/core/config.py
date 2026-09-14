@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 30
     tmdb_api_token: str = ""
+    cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+    cors_origin_regex: str = r"^https?://(?:localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(?:1[6-9]|2\d|3[0-1])\.\d+\.\d+|169\.254\.\d+\.\d+):(?:5173|4173|3000|8080)$"
+    cors_allow_all_local: bool = True
 
     model_config = SettingsConfigDict(
         env_file=".env",

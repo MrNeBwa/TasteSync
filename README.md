@@ -1,34 +1,30 @@
-# Movie Match v0.3 — working web + backend
+# TasteSync v1.7
 
-## This iteration
-- Register flow is explicitly `register -> login -> /auth/me`.
-- After first successful login, if no `birth_date` is stored, the user must complete the age gate before continuing.
-- Settings > Age and censorship edits the stored birth date.
-- Backend stores `users.birth_date`.
-- TMDB `adult` flag is persisted as `movies.is_adult`.
-- Recommendations hide adult movies for under-18 users; in a room, 18+ movies are allowed only when every participant is 18+.
-- Trailer stays visually clean: no large text overlay on top of the video; autoplay remains muted to comply with browser autoplay rules.
-- Full-page cinematic backdrop uses the current movie backdrop/poster as a blurred background layer and combines it with the extracted poster palette when CORS allows pixel sampling.
-- FastAPI enables CORS for local Vite development.
+## Development networking
 
-## Database
-Run migrations:
+The web app uses a same-origin Vite proxy. Open the UI from any reachable interface/IP:
+
+- `http://localhost:5173` -> API `/api` proxied to FastAPI `127.0.0.1:8000`
+- `http://127.0.0.1:5173` -> same
+- `http://192.168.x.x:5173` -> same
+- `http://10.x.x.x:5173` -> same
+- `http://172.16.x.x:5173` through `172.31.x.x:5173` -> same
+- virtual/private interface addresses work without changing frontend config
+
+The browser never calls `:8000` directly in web development, so browser CORS is avoided entirely. WebSocket uses the same-origin `/ws` Vite proxy.
+
+For mobile, set `EXPO_PUBLIC_API_URL` / `EXPO_PUBLIC_WS_URL` to a reachable host of the laptop.
+
+## Run
 
 ```bash
-cd apps/api
+# terminal 1
+cd api
+uv sync
 uv run alembic upgrade head
-```
+uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
-Latest revision: `0007_movie_adult_flag`.
-
-## Backend
-```bash
-cd apps/api
-uv run uvicorn app.main:app --reload
-```
-
-## Web
-```bash
+# terminal 2
 pnpm install
 pnpm dev:web
 ```

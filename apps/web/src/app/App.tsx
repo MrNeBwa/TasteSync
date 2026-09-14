@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { apiFetch as request } from '../shared/api/client';
-import { WS_BASE_URL } from '../shared/api/config';
+import { getRuntimeWsBaseUrl } from '../shared/api/config';
 import { clearTokens, getAccessToken, saveTokens } from '../shared/lib/storage';
 import { getYouTubeEmbedUrl } from '../shared/lib/youtube';
 import type { AuthMode, Genre, Movie, Palette, Room, RoomMember, Screen, Session, User, VoteValue } from '../shared/types/domain';
@@ -48,7 +48,8 @@ function App() {
 
   useEffect(() => {
     if (!room || !token || !['room', 'session', 'match'].includes(screen)) return;
-    const ws = new WebSocket(`${WS_BASE_URL}/ws/rooms/${room.id}?token=${encodeURIComponent(token)}`);
+    const wsBase = getRuntimeWsBaseUrl();
+    const ws = new WebSocket(`${wsBase}/ws/rooms/${room.id}?token=${encodeURIComponent(token)}`);
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data) as { type: string; payload?: unknown };
