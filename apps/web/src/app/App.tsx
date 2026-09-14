@@ -381,13 +381,13 @@ function MovieCard({ movie, busy, onVote }: { movie: Movie; busy: boolean; onVot
           <span className="vote-window-hint">Выберите действие</span>
         </div>
         <div className="movie-votes">
-          <button className="vote no" disabled={busy} onClick={() => onVote('DISLIKE')} aria-label="Не нравится">✕</button>
-          <button className="vote skip" disabled={busy} onClick={() => onVote('SKIP')} aria-label="Пропустить">↗</button>
-          <button className="vote yes" disabled={busy} onClick={() => onVote('LIKE')} aria-label="Нравится">♥</button>
+          <button className="vote no tooltip-btn" data-tooltip="Не нравится" disabled={busy} onClick={() => onVote('DISLIKE')} aria-label="Не нравится">✕</button>
+          <button className="vote skip tooltip-btn" data-tooltip="Пропустить фильм" disabled={busy} onClick={() => onVote('SKIP')} aria-label="Пропустить">↗</button>
+          <button className="vote yes tooltip-btn" data-tooltip="Нравится" disabled={busy} onClick={() => onVote('LIKE')} aria-label="Нравится">♥</button>
         </div>
       </section>
     </div>
-    <aside className="movie-info-enhanced"><div className="info-title-block"><span className="info-label">NOW PLAYING</span><h2>{movie.title}</h2><div className="tag-row">{movie.genres.slice(0, 4).map(g => <span className="tag dark" key={g.id}>{g.name}</span>)}</div><span className="info-meta">{movie.release_date?.slice(0, 4) ?? '—'} · {movie.vote_average ? movie.vote_average.toFixed(1) : '—'} / 10</span></div><div className="info-label">ABOUT THIS FILM</div><p>{movie.overview || 'Описание пока недоступно.'}</p><div className="info-stat-grid"><div><span>POPULARITY</span><strong>{movie.popularity ? movie.popularity.toFixed(0) : '—'}</strong></div><div><span>VOTES</span><strong>{movie.vote_count?.toLocaleString() ?? '—'}</strong></div></div>{movie.trailer_url && <a className="trailer-link" href={movie.trailer_url} target="_blank" rel="noreferrer">Открыть трейлер отдельно ↗</a>}<div className="explore-note"><span>WHY THIS FILM</span><strong>Часть выдачи специально выходит за пределы ваших любимых жанров.</strong></div></aside>
+    <aside className="movie-info-enhanced"><div className="info-title-block"><span className="info-label">NOW PLAYING</span><h2>{movie.title}</h2><span className="info-meta">{movie.release_date?.slice(0, 4) ?? '—'} · {movie.vote_average ? movie.vote_average.toFixed(1) : '—'} / 10</span></div><div className="info-label">ABOUT THIS FILM</div><p className="movie-description">{movie.overview || 'Описание пока недоступно.'}</p><div className="genre-row">{movie.genres.slice(0, 5).map(g => <span className="genre-chip" key={g.id}>{g.name}</span>)}</div><div className="info-stat-grid"><div><span>POPULARITY</span><strong>{movie.popularity ? movie.popularity.toFixed(0) : '—'}</strong></div><div><span>VOTES</span><strong>{movie.vote_count?.toLocaleString() ?? '—'}</strong></div></div>{movie.trailer_url && <a className="trailer-link" href={movie.trailer_url} target="_blank" rel="noreferrer">Открыть трейлер отдельно ↗</a>}<div className="explore-note"><span>WHY THIS FILM</span><strong>Часть выдачи специально выходит за пределы ваших любимых жанров.</strong></div></aside>
   </div>;
 }
 

@@ -7,4 +7,4 @@ cd ..
 docker compose -f infra/docker-compose.yml up -d
 cd apps/api
 uv sync 
-uv run uvicorn app.main:app --reload
+uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000

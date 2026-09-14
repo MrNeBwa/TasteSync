@@ -1,1 +1,14 @@
-{"expo":{"name":"Movie Match","slug":"movie-match","version":"0.1.0","scheme":"moviematch","plugins":["expo-router"],"experiments":{"typedRoutes":true}}}
+{
+  "expo": {
+    "name": "Movie Match",
+    "slug": "movie-match",
+    "version": "0.2.0",
+    "orientation": "portrait",
+    "scheme": "moviematch",
+    "userInterfaceStyle": "light",
+    "plugins": ["expo-router", "expo-secure-store"],
+    "experiments": {"typedRoutes": true},
+    "android": {"package": "com.moviematch.app"},
+    "ios": {"bundleIdentifier": "com.moviematch.app"}
+  }
+}

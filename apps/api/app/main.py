@@ -20,7 +20,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     await close_db()
 
 
-app = FastAPI(title="Movie Match API", version="0.10.0", lifespan=lifespan)
+app = FastAPI(title="Movie Match API", version="1.3.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[

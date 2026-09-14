@@ -5,7 +5,7 @@
   "scripts": {
     "dev:web": "pnpm --filter @movie-match/web dev",
     "dev:mobile": "pnpm --filter @movie-match/mobile start",
-    "dev:api": "cd apps/api && uv run fastapi dev app/main.py",
+    "dev:api": "cd apps/api && uv run uvicorn app.main:app --reload",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test"

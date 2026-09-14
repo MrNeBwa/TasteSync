@@ -39,6 +39,7 @@ def movie_response(movie) -> MovieResponse:
         popularity=movie.popularity,
         vote_average=movie.vote_average,
         vote_count=movie.vote_count,
+        is_adult=bool(movie.is_adult),
         trailer_url=movie.primary_trailer_url,
         genres=[GenreResponse(id=mg.genre.id, name=mg.genre.name) for mg in movie.genres],
     )

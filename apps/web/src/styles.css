@@ -44,3 +44,19 @@
 .vote-window .vote{height:76px}
 @media(max-width:920px){.trailer-window{box-shadow:8px 8px 0 var(--poster-primary)}}
 @media(max-width:560px){.trailer-window{border-radius:20px}.vote-window{border-radius:18px}.vote-window-head{align-items:flex-start;flex-direction:column;gap:4px}.vote-window .vote{height:64px}}
+
+/* v1.3.1 interaction + compact genres */
+.movie-stage-enhanced{align-items:start}
+.movie-left-stack{align-self:start}
+.movie-info-enhanced{align-self:start}
+.movie-description{margin-bottom:14px!important}
+.genre-row{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 18px}
+.genre-chip{display:inline-flex;align-items:center;justify-content:center;min-height:30px;padding:6px 11px;border:1.5px solid #111;border-radius:999px;background:rgba(255,255,255,.42);font:600 11px/1.05 Inter,system-ui,sans-serif;white-space:nowrap;backdrop-filter:blur(5px)}
+.genre-chip::before{content:"";width:6px;height:6px;margin-right:6px;border-radius:50%;background:var(--poster-primary);border:1px solid #111}
+.vote-window{border:0;background:transparent;padding:0;border-radius:0}
+.vote-window-head{padding:0 4px 8px 2px}
+.vote-window .movie-votes{padding:0;background:transparent}
+.vote{position:relative;overflow:visible}
+.tooltip-btn::after{content:attr(data-tooltip);position:absolute;left:50%;top:calc(100% + 10px);transform:translate(-50%, -4px);opacity:0;visibility:hidden;pointer-events:none;z-index:20;white-space:nowrap;padding:8px 10px;border:1.5px solid #111;border-radius:10px;background:rgba(245,243,237,.96);color:#111;font:600 11px/1 Inter,system-ui,sans-serif;box-shadow:3px 3px 0 #111;transition:opacity .16s ease .65s,transform .16s ease .65s,visibility 0s linear .81s}
+.tooltip-btn:hover::after,.tooltip-btn:focus-visible::after{opacity:1;visibility:visible;transform:translate(-50%,0);transition-delay:.65s}
+@media(max-width:560px){.genre-chip{min-height:28px;padding:5px 9px}.tooltip-btn::after{top:auto;bottom:calc(100% + 10px);transform:translate(-50%,4px)}.tooltip-btn:hover::after,.tooltip-btn:focus-visible::after{transform:translate(-50%,0)}}
