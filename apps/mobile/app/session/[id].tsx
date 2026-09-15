@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { Image, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import { Button, COLORS, Loading } from '../../src/components/Ui';
 import { request, youtubeEmbed, type Match, type Movie, type Session } from '../../src/lib/api';
@@ -9,6 +10,7 @@ import { useAuth } from '../../src/store/AuthContext';
 export default function SessionScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { token } = useAuth();
+  const insets = useSafeAreaInsets();
   const [movies, setMovies] = useState<Movie[]>([]);
   const [index, setIndex] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -106,51 +108,81 @@ export default function SessionScreen() {
   }
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      <Text style={styles.kicker}>NOW PLAYING · {index + 1}/{movies.length}</Text>
-      <View style={styles.visual}>
+    <View style={[styles.screen, { paddingTop: insets.top + 40 }]}>
+      <View style={styles.trailerSection}>
         {embed ? (
-          <WebView source={{ uri: embed }} allowsInlineMediaPlayback mediaPlaybackRequiresUserAction={false} style={styles.webview} />
-        ) : movie.poster_url ? (
-          <Image source={{ uri: movie.poster_url }} style={styles.poster} />
+          <WebView
+            source={{ uri: embed, headers: { Referer: 'https://com.moviematch.app' } }}
+            allowsInlineMediaPlayback
+            mediaPlaybackRequiresUserAction={false}
+            allowsFullscreenVideo
+            javaScriptEnabled
+            domStorageEnabled
+            style={styles.trailer}
+          />
+        ) : movie.backdrop_url || movie.poster_url ? (
+          <Image source={{ uri: movie.backdrop_url || movie.poster_url! }} style={styles.trailerImage} />
         ) : (
-          <View style={styles.fallback}><Text>NO POSTER</Text></View>
+          <View style={styles.trailerFallback}><Text style={styles.trailerFallbackText}>ТРЕЙЛЕР НЕДОСТУПЕН</Text></View>
         )}
+        <View style={styles.kickerPill}><Text style={styles.kicker}>NOW PLAYING · {index + 1}/{movies.length}</Text></View>
       </View>
-      <View style={styles.info}>
-        <Text style={styles.title}>{movie.title}</Text>
-        <Text style={styles.meta}>{movie.genres.map(g => g.name).join(' · ')}</Text>
-        <Text style={styles.meta}>{movie.release_date?.slice(0, 4) ?? '—'} · {movie.vote_average?.toFixed(1) ?? '—'} / 10</Text>
-        {movie.overview ? <Text style={styles.overview}>{movie.overview}</Text> : null}
-        <View style={styles.chips}>{movie.genres.map(g => <View key={g.id} style={styles.chip}><Text style={styles.chipText}>{g.name}</Text></View>)}</View>
+
+      <ScrollView style={styles.detailsScroll} contentContainerStyle={styles.detailsContent}>
+        <View style={styles.details}>
+          <Text style={styles.title}>{movie.title}</Text>
+          <View style={styles.tagRow}>{movie.genres.slice(0, 4).map(g => <Text key={g.id} style={styles.tag}>{g.name}</Text>)}</View>
+          <Text style={styles.rating}>
+            {movie.release_date?.slice(0, 4) ?? '—'} · {movie.vote_average?.toFixed(1) ?? '—'} / 10
+          </Text>
+          {movie.overview ? <Text style={styles.overview}>{movie.overview}</Text> : null}
+        </View>
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+      </ScrollView>
+
+      <View style={styles.actionBar}>
+        <Pressable style={styles.voteButton} disabled={voting} onPress={() => vote('DISLIKE')}>
+          <Text style={[styles.voteIcon, styles.voteIconRed]}>✕</Text>
+          <Text style={styles.voteLabel}>Не нравится</Text>
+        </Pressable>
+        <Pressable style={styles.voteButton} disabled={voting} onPress={() => vote('SKIP')}>
+          <Text style={[styles.voteIcon, styles.voteIconGray]}>↗</Text>
+          <Text style={styles.voteLabel}>Пропустить</Text>
+        </Pressable>
+        <Pressable style={styles.voteButton} disabled={voting} onPress={() => vote('LIKE')}>
+          <Text style={[styles.voteIcon, styles.voteIconGreen]}>♥</Text>
+          <Text style={styles.voteLabel}>Нравится</Text>
+        </Pressable>
       </View>
-      <View style={styles.actions}>
-        <Button variant="danger" disabled={voting} onPress={() => vote('DISLIKE')}>✕</Button>
-        <Button variant="secondary" disabled={voting} onPress={() => vote('SKIP')}>↗</Button>
-        <Button disabled={voting} onPress={() => vote('LIKE')}>♥</Button>
-      </View>
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: COLORS.ink },
-  content: { padding: 14, gap: 12, paddingBottom: 40 },
+  screen: { flex: 1, backgroundColor: '#0E0E0E' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20, gap: 12 },
-  kicker: { color: '#aaa', fontSize: 11, letterSpacing: 2, fontWeight: '700' },
-  visual: { width: '100%', aspectRatio: 16 / 10, borderRadius: 22, overflow: 'hidden', borderWidth: 2, borderColor: '#fff', backgroundColor: '#000' },
-  webview: { flex: 1, backgroundColor: '#000' },
-  poster: { width: '100%', height: '100%', resizeMode: 'cover' },
-  fallback: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  info: { backgroundColor: '#F5F3ED', borderRadius: 22, borderWidth: 2, borderColor: '#111', padding: 18, gap: 8 },
-  title: { fontSize: 36, fontWeight: '900', letterSpacing: -1.2, color: '#111' },
-  meta: { fontSize: 12, color: '#666' },
-  overview: { fontSize: 17, lineHeight: 25, color: '#57544E', marginTop: 8 },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
-  chip: { paddingHorizontal: 10, paddingVertical: 7, borderRadius: 999, borderWidth: 1.5, borderColor: '#111', backgroundColor: '#fff' },
-  chipText: { fontSize: 12, fontWeight: '800' },
-  actions: { flexDirection: 'row', gap: 10 },
+  trailerSection: { width: '100%', aspectRatio: 16 / 9, backgroundColor: '#000' },
+  trailer: { flex: 1, backgroundColor: '#000' },
+  trailerImage: { width: '100%', height: '100%', resizeMode: 'cover' },
+  trailerFallback: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#222' },
+  trailerFallbackText: { color: '#777', fontSize: 13, letterSpacing: 2, fontWeight: '800' },
+  kickerPill: { position: 'absolute', top: 12, left: 12, backgroundColor: 'rgba(14,14,14,.72)', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 },
+  kicker: { color: '#EFBD43', fontSize: 11, letterSpacing: 2, fontWeight: '800' },
+  detailsScroll: { flex: 1 },
+  detailsContent: { padding: 20, paddingBottom: 32, gap: 8 },
+  details: { gap: 6 },
+  title: { fontSize: 30, fontWeight: '900', letterSpacing: -0.8, color: '#F5F3ED' },
+  tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
+  tag: { fontSize: 12, fontWeight: '800', color: '#0E0E0E', backgroundColor: '#EFBD43', borderWidth: 1.5, borderColor: '#0E0E0E', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5, overflow: 'hidden' },
+  rating: { fontSize: 14, color: '#EFBD43', fontWeight: '800' },
+  overview: { fontSize: 16, lineHeight: 24, color: '#B9B5AC', marginTop: 8 },
+  actionBar: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 16, borderTopWidth: 1, borderTopColor: '#2A2A2A', backgroundColor: '#161616' },
+  voteButton: { alignItems: 'center', gap: 6, minWidth: 92, paddingVertical: 10 },
+  voteIcon: { fontSize: 34, fontWeight: '900' },
+  voteLabel: { fontSize: 11, fontWeight: '800', color: '#9A968D' },
+  voteIconRed: { color: '#FF6B7A' },
+  voteIconGray: { color: '#B9B5AC' },
+  voteIconGreen: { color: '#7FE28A' },
   done: { flex: 1, backgroundColor: '#111', padding: 24, justifyContent: 'center', gap: 12 },
   doneTitle: { fontSize: 40, fontWeight: '900', letterSpacing: -1.5, color: '#F5F3ED' },
   doneCopy: { fontSize: 17, color: '#9A968D', lineHeight: 24 },

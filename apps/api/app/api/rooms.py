@@ -11,6 +11,7 @@ from app.modules.rooms.schemas import (
     JoinRoomRequest,
     ReadyResponse,
     RoomDetailResponse,
+    RoomMemberResponse,
     RoomResponse,
 )
 from app.modules.rooms.service import (
@@ -25,7 +26,11 @@ from app.modules.rooms.service import (
 from app.repositories.room_repository import RoomRepository
 from app.repositories.session_repository import SessionRepository
 from app.repositories.movie_repository import MovieRepository
-from app.modules.sessions.service import CannotStartSessionError, MovieSessionService, SessionNotFoundError
+from app.modules.sessions.service import (
+    CannotStartSessionError,
+    MovieSessionService,
+    SessionNotFoundError,
+)
 from app.websocket.manager import manager
 
 router = APIRouter(prefix="/rooms", tags=["rooms"])
@@ -40,13 +45,13 @@ def room_detail(room) -> RoomDetailResponse:
         status=room.status,
         created_at=room.created_at,
         members=[
-            {
-                "user_id": member.user_id,
-                "username": member.user.username,
-                "role": member.role,
-                "is_ready": member.is_ready,
-                "joined_at": member.joined_at,
-            }
+            RoomMemberResponse(
+                user_id=member.user_id,
+                username=member.user.username,
+                role=member.role,
+                is_ready=member.is_ready,
+                joined_at=member.joined_at,
+            )
             for member in room.members
         ],
     )
@@ -140,7 +145,11 @@ async def set_ready(
     detail = room_detail(room)
     await manager.broadcast(
         room_id,
-        {"type": "ROOM_READY_CHANGED", "room_id": str(room_id), "payload": detail.model_dump(mode="json")},
+        {
+            "type": "ROOM_READY_CHANGED",
+            "room_id": str(room_id),
+            "payload": detail.model_dump(mode="json"),
+        },
     )
     return ReadyResponse(room=detail, is_ready=ready)
 
@@ -204,5 +213,9 @@ async def leave_room(
 
     await manager.broadcast(
         room_id,
-        {"type": "ROOM_MEMBER_LEFT", "room_id": str(room_id), "payload": {"user_id": str(current_user.id)}},
+        {
+            "type": "ROOM_MEMBER_LEFT",
+            "room_id": str(room_id),
+            "payload": {"user_id": str(current_user.id)},
+        },
     )
