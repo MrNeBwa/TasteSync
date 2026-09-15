@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.dependencies import get_current_user
 from app.db.session import get_db_session
 from app.models.user import User
-from app.modules.movies.schemas import GenreResponse, MovieResponse
+from app.modules.movies.schemas import MovieResponse, to_movie_response
 from app.modules.sessions.schemas import MatchResponse, SessionResponse, VoteRequest, VoteResponse
 from app.modules.sessions.service import (
     CannotFinishSessionError,
@@ -29,20 +29,7 @@ router = APIRouter(prefix="/sessions", tags=["sessions"])
 
 
 def movie_response(movie) -> MovieResponse:
-    return MovieResponse(
-        id=movie.id,
-        title=movie.title,
-        overview=movie.overview,
-        release_date=movie.release_date,
-        poster_url=movie.poster_url,
-        backdrop_url=movie.backdrop_url,
-        popularity=movie.popularity,
-        vote_average=movie.vote_average,
-        vote_count=movie.vote_count,
-        is_adult=bool(movie.is_adult),
-        trailer_url=movie.primary_trailer_url,
-        genres=[GenreResponse(id=mg.genre.id, name=mg.genre.name) for mg in movie.genres],
-    )
+    return to_movie_response(movie)
 
 
 def service(session: AsyncSession) -> MovieSessionService:
@@ -112,7 +99,9 @@ async def get_recommendations(
     return [movie_response(movie) for movie in movies]
 
 
-@router.post("/{session_id}/votes", response_model=VoteResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{session_id}/votes", response_model=VoteResponse, status_code=status.HTTP_201_CREATED
+)
 async def vote(
     session_id: UUID,
     payload: VoteRequest,

@@ -17,7 +17,11 @@ class MovieRepository:
         self.session = session
 
     async def get_by_provider_id(self, provider: str, provider_id: str) -> Movie | None:
-        stmt = select(Movie).where(Movie.provider == provider, Movie.provider_id == provider_id).options(selectinload(Movie.genres).selectinload(MovieGenre.genre))
+        stmt = (
+            select(Movie)
+            .where(Movie.provider == provider, Movie.provider_id == provider_id)
+            .options(selectinload(Movie.genres).selectinload(MovieGenre.genre))
+        )
         return await self.session.scalar(stmt)
 
     async def get_genre(self, provider: str, provider_id: str, name: str) -> Genre:
@@ -31,10 +35,23 @@ class MovieRepository:
             genre.name = name
         return genre
 
-    async def upsert_movie(self, *, provider: str, provider_id: str, title: str, overview: str | None,
-                           release_date: date | None, poster_url: str | None, backdrop_url: str | None,
-                           popularity: float | None, vote_average: float | None, vote_count: int | None, is_adult: bool,
-                           primary_trailer_url: str | None, genres: list[tuple[str, str]]) -> Movie:
+    async def upsert_movie(
+        self,
+        *,
+        provider: str,
+        provider_id: str,
+        title: str,
+        overview: str | None,
+        release_date: date | None,
+        poster_url: str | None,
+        backdrop_url: str | None,
+        popularity: float | None,
+        vote_average: float | None,
+        vote_count: int | None,
+        is_adult: bool,
+        primary_trailer_url: str | None,
+        genres: list[tuple[str, str]],
+    ) -> Movie:
         movie = await self.get_by_provider_id(provider, provider_id)
         if movie is None:
             movie = Movie(provider=provider, provider_id=provider_id, title=title)
@@ -57,9 +74,12 @@ class MovieRepository:
         await self.session.flush()
         return movie
 
-
     async def get_by_id(self, movie_id: UUID) -> Movie | None:
-        stmt = select(Movie).where(Movie.id == movie_id).options(selectinload(Movie.genres).selectinload(MovieGenre.genre))
+        stmt = (
+            select(Movie)
+            .where(Movie.id == movie_id)
+            .options(selectinload(Movie.genres).selectinload(MovieGenre.genre))
+        )
         return await self.session.scalar(stmt)
 
     async def list_popular(self, *, limit: int = 30, include_adult: bool = True) -> list[Movie]:
@@ -69,19 +89,58 @@ class MovieRepository:
         stmt = stmt.order_by(Movie.popularity.desc().nullslast()).limit(limit)
         return list(await self.session.scalars(stmt))
 
-    async def list_candidates(self, *, exclude: set[UUID], preferred_genre_ids: list[UUID], limit: int, include_adult: bool = True) -> list[Movie]:
+    async def get_by_ids(self, movie_ids: set[UUID]) -> list[Movie]:
+        if not movie_ids:
+            return []
+        stmt = (
+            select(Movie)
+            .options(selectinload(Movie.genres).selectinload(MovieGenre.genre))
+            .where(Movie.id.in_(movie_ids))
+        )
+        return list(await self.session.scalars(stmt))
+
+    async def list_candidates(
+        self,
+        *,
+        exclude: set[UUID],
+        preferred_genre_ids: list[UUID],
+        limit: int,
+        include_adult: bool = True,
+    ) -> list[Movie]:
         conditions = [Movie.id.not_in(exclude)]
         if not include_adult:
             conditions.append(Movie.is_adult.is_(False))
-        stmt = select(Movie).options(selectinload(Movie.genres).selectinload(MovieGenre.genre)).where(*conditions)
-        movies = list(await self.session.scalars(stmt.order_by(Movie.popularity.desc().nullslast()).limit(max(limit * 5, 50))))
+        stmt = (
+            select(Movie)
+            .options(selectinload(Movie.genres).selectinload(MovieGenre.genre))
+            .where(*conditions)
+        )
+        movies = list(
+            await self.session.scalars(
+                stmt.order_by(Movie.popularity.desc().nullslast()).limit(max(limit * 5, 50))
+            )
+        )
         preferred = set(preferred_genre_ids)
-        movies.sort(key=lambda m: (sum(1 for g in m.genres if g.genre_id in preferred), m.popularity or 0.0), reverse=True)
+        movies.sort(
+            key=lambda m: (
+                sum(1 for g in m.genres if g.genre_id in preferred),
+                m.popularity or 0.0,
+            ),
+            reverse=True,
+        )
         return movies[:limit]
 
-    async def genre_preference_scores(self, *, session_id: UUID, user_ids: list[UUID]) -> dict[UUID, int]:
-        stmt = select(MovieGenre.genre_id).join(Vote, Vote.movie_id == MovieGenre.movie_id).where(
-            Vote.session_id == session_id, Vote.user_id.in_(user_ids), Vote.value == VoteValue.LIKE,
+    async def genre_preference_scores(
+        self, *, session_id: UUID, user_ids: list[UUID]
+    ) -> dict[UUID, int]:
+        stmt = (
+            select(MovieGenre.genre_id)
+            .join(Vote, Vote.movie_id == MovieGenre.movie_id)
+            .where(
+                Vote.session_id == session_id,
+                Vote.user_id.in_(user_ids),
+                Vote.value == VoteValue.LIKE,
+            )
         )
         rows = await self.session.scalars(stmt)
         scores: dict[UUID, int] = {}

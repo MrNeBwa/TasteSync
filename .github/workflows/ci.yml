@@ -1,4 +1,3 @@
-# Move this file to .github/workflows/ci.yml after repository creation.
 name: CI
 on: [push, pull_request]
 jobs:
@@ -12,10 +11,23 @@ jobs:
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @movie-match/web typecheck
+      - run: pnpm --filter @movie-match/web build
+  mobile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10.15.0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @movie-match/mobile typecheck
   api:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
       - run: cd apps/api && uv sync --dev
+      - run: cd apps/api && uv run ruff check app tests
+      - run: cd apps/api && uv run mypy app
       - run: cd apps/api && uv run pytest
