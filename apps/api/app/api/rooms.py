@@ -43,6 +43,7 @@ def room_detail(room) -> RoomDetailResponse:
         code=room.code,
         owner_id=room.owner_id,
         status=room.status,
+        task=room.task,
         created_at=room.created_at,
         members=[
             RoomMemberResponse(
@@ -65,7 +66,7 @@ async def create_room(
 ) -> RoomResponse:
     service = RoomService(RoomRepository(session))
     try:
-        room = await service.create_room(name=payload.name, owner_id=current_user.id)
+        room = await service.create_room(name=payload.name, owner_id=current_user.id, task=payload.task)
         await session.commit()
     except UserNotFoundError as exc:
         await session.rollback()

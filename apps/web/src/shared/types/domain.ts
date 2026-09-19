@@ -1,6 +1,56 @@
 export type Screen = 'landing' | 'auth' | 'home' | 'room' | 'session' | 'match' | 'settings';
 export type AuthMode = 'login' | 'register';
 export type VoteValue = 'LIKE' | 'DISLIKE' | 'SKIP';
+export type SearchMode = 'movies' | 'restaurants' | 'entertainment';
+export type PlaceCategory = 'RESTAURANT' | 'ENTERTAINMENT';
+
+export type Place = {
+  id: string;
+  name: string;
+  category: PlaceCategory;
+  address: string | null;
+  city: string | null;
+  latitude: number;
+  longitude: number;
+  image_url: string | null;
+  rating: number | null;
+  price_level: string | null;
+  cuisine: string | null;
+  tags: string[];
+  website: string | null;
+  phone: string | null;
+  opening_hours: string | null;
+};
+
+export type VotePayload = {
+  session_id: string;
+  movie_id?: string | null;
+  place_id?: string | null;
+  category?: SearchMode | null;
+  value: VoteValue;
+  matched: boolean;
+  match?: MovieMatch | PlaceMatch | null;
+};
+
+export type MovieMatch = {
+  id: string;
+  session_id: string;
+  movie_id: string;
+  created_at: string;
+};
+
+export type PlaceMatch = {
+  id: string;
+  session_id: string;
+  place_id: string;
+  created_at: string;
+};
+
+export type MatchResult =
+  | { kind: 'movie'; category: 'movies'; movie: Movie }
+  | { kind: 'place'; category: 'restaurants' | 'entertainment'; place: Place };
+
+export type Coords = { latitude: number; longitude: number };
 
 export type User = {
   id: string;
@@ -23,6 +73,7 @@ export type Room = {
   code: string;
   owner_id: string;
   status: string;
+  task?: 'movies' | 'restaurants' | 'entertainment';
   created_at: string;
   members: RoomMember[];
 };

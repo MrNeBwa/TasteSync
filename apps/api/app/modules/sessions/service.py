@@ -6,7 +6,9 @@ from uuid import UUID, uuid4
 from app.models.room import RoomStatus
 from app.models.session import MovieSession, SessionStatus
 from app.models.vote import VoteValue
+from app.modules.places.service import PlaceNotFoundError
 from app.repositories.movie_repository import MovieRepository
+from app.repositories.place_repository import PlaceRepository
 from app.repositories.room_repository import RoomRepository
 from app.repositories.session_repository import SessionRepository
 
@@ -45,10 +47,12 @@ class MovieSessionService:
         session_repository: SessionRepository,
         room_repository: RoomRepository,
         movie_repository: MovieRepository,
+        place_repository: PlaceRepository | None = None,
     ) -> None:
         self.sessions = session_repository
         self.rooms = room_repository
         self.movies = movie_repository
+        self.places = place_repository or PlaceRepository(session_repository.session)
         self.db = session_repository.session
 
     async def create_for_room(self, *, room_id: UUID, user_id: UUID) -> MovieSession:
@@ -190,6 +194,70 @@ class MovieSessionService:
                         movie_id=movie_id,
                     )
                     await self.db.flush()
+
+                movie_session.status = SessionStatus.MATCHED
+                room = await self.rooms.get_by_id(movie_session.room_id, for_update=True)
+                if room is not None:
+                    room.status = RoomStatus.MATCH_FOUND
+                await self.db.flush()
+
+        return vote, match
+
+    async def vote_place(
+        self,
+        *,
+        session_id: UUID,
+        user_id: UUID,
+        place_id: UUID,
+        value: VoteValue,
+    ):
+        movie_session = await self.get_for_member(
+            session_id=session_id,
+            user_id=user_id,
+            for_update=True,
+        )
+        if movie_session.status != SessionStatus.ACTIVE:
+            raise SessionNotActiveError
+
+        place = await self.places.get_by_id(place_id)
+        if place is None:
+            raise PlaceNotFoundError
+
+        if await self.places.get_vote(
+            session_id=session_id,
+            user_id=user_id,
+            place_id=place_id,
+        ) is not None:
+            raise DuplicateVoteError
+
+        vote = await self.places.create_vote(
+            session_id=session_id,
+            user_id=user_id,
+            place_id=place_id,
+            value=value,
+        )
+        await self.db.flush()
+
+        match = None
+        if value == VoteValue.LIKE:
+            members = await self.rooms.list_members(movie_session.room_id)
+            user_ids = [member.user_id for member in members]
+            likes = await self.places.count_likes(
+                session_id=session_id,
+                place_id=place_id,
+                user_ids=user_ids,
+            )
+
+            if user_ids and likes == len(user_ids):
+                match = await self.places.get_match(
+                    session_id=session_id,
+                    place_id=place_id,
+                )
+                if match is None:
+                    match = await self.places.create_match(
+                        session_id=session_id,
+                        place_id=place_id,
+                    )
 
                 movie_session.status = SessionStatus.MATCHED
                 room = await self.rooms.get_by_id(movie_session.room_id, for_update=True)

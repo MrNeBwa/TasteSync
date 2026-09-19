@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from app.models.room import Room, RoomStatus
+from app.models.room import Room, RoomStatus, RoomTask
 from app.repositories.room_repository import RoomRepository
 
 
@@ -36,14 +36,14 @@ class RoomService:
     def __init__(self, repository: RoomRepository) -> None:
         self.repository = repository
 
-    async def create_room(self, *, name: str, owner_id: UUID) -> Room:
+    async def create_room(self, *, name: str, owner_id: UUID, task: RoomTask = RoomTask.MOVIES) -> Room:
         owner = await self.repository.get_user(owner_id)
         if owner is None:
             raise UserNotFoundError(owner_id)
         normalized_name = name.strip()
         if not normalized_name:
             raise ValueError("Room name cannot be empty")
-        return await self.repository.create_room(name=normalized_name, owner=owner)
+        return await self.repository.create_room(name=normalized_name, owner=owner, task=task)
 
     async def join_room(self, *, code: str, user_id: UUID) -> Room:
         room = await self.repository.get_by_code(code.strip().upper(), for_update=True)

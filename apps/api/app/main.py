@@ -3,12 +3,14 @@ from collections.abc import AsyncIterator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import func, select
 
 from app.api.auth import router as auth_router
 from app.api.health import router as health_router
 from app.api.rooms import router as rooms_router
 from app.api.users import router as users_router
 from app.api.movies import router as movies_router
+from app.api.places import router as places_router
 from app.api.ws import router as ws_router
 from app.api.sessions import router as sessions_router
 from app.api.history import router as history_router
@@ -19,6 +21,7 @@ from app.db.session import close_db
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    await seed_catalog_if_empty()
     yield
     await close_db()
 
@@ -40,6 +43,7 @@ def create_app() -> FastAPI:
     application.include_router(rooms_router, prefix="/api")
     application.include_router(users_router, prefix="/api")
     application.include_router(movies_router, prefix="/api")
+    application.include_router(places_router, prefix="/api")
     application.include_router(ws_router)
     application.include_router(sessions_router, prefix="/api")
     application.include_router(history_router, prefix="/api")
