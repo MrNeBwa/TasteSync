@@ -3,20 +3,44 @@ from collections.abc import AsyncIterator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import func, select
 
 from app.api.auth import router as auth_router
 from app.api.health import router as health_router
 from app.api.rooms import router as rooms_router
 from app.api.users import router as users_router
 from app.api.movies import router as movies_router
+from app.api.places import router as places_router
 from app.api.ws import router as ws_router
 from app.api.sessions import router as sessions_router
 from app.core.config import get_settings
-from app.db.session import close_db
+from app.core.cors import get_cors_config
+from app.db.session import AsyncSessionLocal, close_db
+from app.models.movie import Movie
+from app.modules.movies.service import MovieService
+from app.providers.tmdb import TMDBProvider
+from app.repositories.movie_repository import MovieRepository
+
+
+async def seed_catalog_if_empty() -> None:
+    try:
+        async with AsyncSessionLocal() as session:
+            count = await session.scalar(select(func.count()).select_from(Movie))
+            if count:
+                return
+            provider = TMDBProvider()
+            try:
+                await MovieService(MovieRepository(session), provider).sync_popular(pages=2)
+            finally:
+                await provider.close()
+            await session.commit()
+    except Exception:
+        pass
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    await seed_catalog_if_empty()
     yield
     await close_db()
 
@@ -24,10 +48,12 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 def create_app() -> FastAPI:
     settings = get_settings()
     application = FastAPI(title=settings.app_name, version="1.3.0", lifespan=lifespan)
+    cors_origins, cors_regex, cors_allow_all = get_cors_config()
     application.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.cors_origins,
-        allow_credentials=True,
+        allow_origins=["*"] if cors_allow_all else cors_origins,
+        allow_origin_regex=None if cors_allow_all else cors_regex,
+        allow_credentials=False if cors_allow_all else True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
@@ -36,6 +62,7 @@ def create_app() -> FastAPI:
     application.include_router(rooms_router, prefix="/api")
     application.include_router(users_router, prefix="/api")
     application.include_router(movies_router, prefix="/api")
+    application.include_router(places_router, prefix="/api")
     application.include_router(ws_router)
     application.include_router(sessions_router, prefix="/api")
     return application

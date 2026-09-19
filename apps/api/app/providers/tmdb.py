@@ -28,7 +28,12 @@ class TMDBProvider(MovieProvider):
     async def close(self) -> None:
         await self._client.aclose()
 
-    async def _request(self, path: str, *, params: dict[str, object]) -> httpx.Response:
+    async def _request(
+        self,
+        path: str,
+        *,
+        params: dict[str, str | int] | None = None,
+    ) -> httpx.Response:
         last_error: Exception | None = None
         for attempt in range(3):
             try:

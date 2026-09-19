@@ -1,6 +1,8 @@
 from functools import lru_cache
+from typing import Annotated
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -15,7 +17,16 @@ class Settings(BaseSettings):
     refresh_token_expire_days: int = 30
     tmdb_api_token: str = ""
 
-    cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    cors_origin_regex: str = r"^https?://(?:localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(?:1[6-9]|2\d|3[0-1])\.\d+\.\d+|169\.254\.\d+\.\d+):(?:5173|4173|3000|8080)$"
+    cors_allow_all_local: bool = True
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def _parse_cors_origins(cls, value: object) -> object:
+        if isinstance(value, str) and not value.lstrip().startswith("["):
+            return [item.strip() for item in value.split(",") if item.strip()]
+        return value
 
     model_config = SettingsConfigDict(
         env_file=".env",
