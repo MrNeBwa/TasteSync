@@ -27,6 +27,15 @@ export type Movie = {
 };
 export type Session = { id: string; room_id: string; status: string; created_at: string; started_at?: string | null; finished_at?: string | null };
 export type Match = { id: string; session_id: string; movie_id: string; created_at: string; started_at?: string | null; finished_at?: string | null };
+export type HistoryItem = {
+  room_id: string;
+  room_name: string;
+  room_code: string;
+  room_status: string;
+  created_at: string;
+  member_count: number;
+  matched_movies: Movie[];
+};
 
 export async function request<T>(path: string, options: RequestInit = {}, token?: string): Promise<T> {
   const doFetch = async (authToken?: string): Promise<Response> => {

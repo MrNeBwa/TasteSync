@@ -29,10 +29,7 @@ class TMDBProvider(MovieProvider):
         await self._client.aclose()
 
     async def _request(
-        self,
-        path: str,
-        *,
-        params: dict[str, str | int] | None = None,
+        self, path: str, *, params: dict[str, str | int | float | bool]
     ) -> httpx.Response:
         last_error: Exception | None = None
         for attempt in range(3):
@@ -48,7 +45,7 @@ class TMDBProvider(MovieProvider):
                     if exc.response.status_code not in {429, 500, 502, 503, 504}:
                         raise
                 if attempt < 2:
-                    await asyncio.sleep(0.5 * (2 ** attempt))
+                    await asyncio.sleep(0.5 * (2**attempt))
         assert last_error is not None
         raise last_error
 
@@ -114,12 +111,18 @@ class TMDBProvider(MovieProvider):
             title=item["title"],
             overview=item.get("overview"),
             release_date=item.get("release_date"),
-            poster_url=f"{self.IMAGE_BASE}{item['poster_path']}" if item.get("poster_path") else None,
-            backdrop_url=f"{self.BACKDROP_BASE}{item['backdrop_path']}" if item.get("backdrop_path") else None,
+            poster_url=f"{self.IMAGE_BASE}{item['poster_path']}"
+            if item.get("poster_path")
+            else None,
+            backdrop_url=f"{self.BACKDROP_BASE}{item['backdrop_path']}"
+            if item.get("backdrop_path")
+            else None,
             popularity=item.get("popularity"),
             vote_average=item.get("vote_average"),
             vote_count=item.get("vote_count"),
             is_adult=bool(item.get("adult", False)),
-            genres=[ProviderGenre(str(gid), genre_map[gid]) for gid in genre_ids if gid in genre_map],
+            genres=[
+                ProviderGenre(str(gid), genre_map[gid]) for gid in genre_ids if gid in genre_map
+            ],
             trailers=videos,
         )

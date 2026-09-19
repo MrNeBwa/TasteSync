@@ -26,7 +26,11 @@ from app.modules.rooms.service import (
 from app.repositories.room_repository import RoomRepository
 from app.repositories.session_repository import SessionRepository
 from app.repositories.movie_repository import MovieRepository
-from app.modules.sessions.service import CannotStartSessionError, MovieSessionService, SessionNotFoundError
+from app.modules.sessions.service import (
+    CannotStartSessionError,
+    MovieSessionService,
+    SessionNotFoundError,
+)
 from app.websocket.manager import manager
 
 router = APIRouter(prefix="/rooms", tags=["rooms"])
@@ -142,7 +146,11 @@ async def set_ready(
     detail = room_detail(room)
     await manager.broadcast(
         room_id,
-        {"type": "ROOM_READY_CHANGED", "room_id": str(room_id), "payload": detail.model_dump(mode="json")},
+        {
+            "type": "ROOM_READY_CHANGED",
+            "room_id": str(room_id),
+            "payload": detail.model_dump(mode="json"),
+        },
     )
     return ReadyResponse(room=detail, is_ready=ready)
 
@@ -206,5 +214,9 @@ async def leave_room(
 
     await manager.broadcast(
         room_id,
-        {"type": "ROOM_MEMBER_LEFT", "room_id": str(room_id), "payload": {"user_id": str(current_user.id)}},
+        {
+            "type": "ROOM_MEMBER_LEFT",
+            "room_id": str(room_id),
+            "payload": {"user_id": str(current_user.id)},
+        },
     )
