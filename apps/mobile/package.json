@@ -8,8 +8,8 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "lint": "tsc --noEmit",
-    "typecheck": "tsc --noEmit"
+    "lint": "node scripts/generate-typed-routes.js && tsc --noEmit",
+    "typecheck": "node scripts/generate-typed-routes.js && tsc --noEmit"
   },
   "dependencies": {
     "expo": "^53.0.20",

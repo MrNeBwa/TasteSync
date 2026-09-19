@@ -18,8 +18,11 @@ For mobile, set `EXPO_PUBLIC_API_URL` / `EXPO_PUBLIC_WS_URL` to a reachable host
 ## Run
 
 ```bash
+# terminal 0 - infrastructure (Postgres :5432, Redis :6379)
+docker compose -f infra/docker-compose.yml up -d
+
 # terminal 1
-cd api
+cd apps/api
 uv sync
 uv run alembic upgrade head
 uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
@@ -28,3 +31,5 @@ uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 pnpm install
 pnpm dev:web
 ```
+
+The API seeds the movie catalog from TMDB automatically on startup when the `movies` table is empty. `/api/health` reports DB/Redis connectivity.
