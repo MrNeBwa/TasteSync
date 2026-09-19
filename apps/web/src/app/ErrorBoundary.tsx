@@ -2,7 +2,7 @@ import { Component, type ErrorInfo, type ReactNode } from 'react';
 
 export class ErrorBoundary extends Component<
   { children: ReactNode },
-  { hasError: boolean; message: string },
+  { hasError: boolean; message: string }
 > {
   state = { hasError: false, message: '' };
 

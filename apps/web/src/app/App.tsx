@@ -1,9 +1,21 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { apiFetch as request } from '../shared/api/client';
 import { getRuntimeWsBaseUrl } from '../shared/api/config';
 import { clearTokens, getAccessToken, saveTokens } from '../shared/lib/storage';
 import { getYouTubeEmbedUrl } from '../shared/lib/youtube';
-import type { AuthMode, Genre, Movie, Palette, Room, RoomMember, Screen, Session, User, VoteValue } from '../shared/types/domain';
+import { getCurrentCity, getCurrentCoords } from '../shared/lib/geo';
+import { placesApi } from '../features/places/api';
+import { ModeCircle, MODE_OPTIONS } from '../components/ModeCircle';
+import { PlaceCard } from '../components/PlaceCard';
+import { PlaceCategoryIcon } from '../components/icons';
+import type { AuthMode, Coords, Genre, MatchResult, Movie, Palette, Place, Room, RoomMember, Screen, SearchMode, Session, User, VoteValue } from '../shared/types/domain';
+
+const FALLBACK_PALETTE: Palette = {
+  primary: '#efbd42',
+  secondary: '#e5679f',
+  glow: 'rgba(239,189,66,.28)',
+  ink: '#121212',
+};
 
 function App() {
   const [screen, setScreen] = useState<Screen>(() => getAccessToken() ? 'home' : 'landing');
@@ -13,7 +25,7 @@ function App() {
   const [authLoading, setAuthLoading] = useState(Boolean(getAccessToken()));
   const [room, setRoom] = useState<Room | null>(null);
   const [session, setSession] = useState<Session | null>(null);
-  const [matchMovie, setMatchMovie] = useState<Movie | null>(null);
+  const [matchResult, setMatchResult] = useState<MatchResult | null>(null);
   const [error, setError] = useState('');
   const [ageGateOpen, setAgeGateOpen] = useState(false);
   const [ageSaving, setAgeSaving] = useState(false);
@@ -60,11 +72,24 @@ function App() {
           setScreen('session');
         }
         if (msg.type === 'MATCH_FOUND' && msg.payload && typeof msg.payload === 'object') {
-          const payload = msg.payload as { movie_id: string; session_id: string };
+          const payload = msg.payload as { movie_id?: string | null; place_id?: string | null; category?: string | null; session_id: string };
           setScreen('match');
-          request<Movie[]>(`/sessions/${payload.session_id}/movies?limit=50`, {}, token)
-            .then(movies => setMatchMovie(movies.find(movie => movie.id === payload.movie_id) ?? null))
-            .catch(() => undefined);
+          if (payload.place_id) {
+            request<Place>(`/places/${payload.place_id}`, {}, token)
+              .then(place => setMatchResult({
+                kind: 'place',
+                category: payload.category === 'RESTAURANT' ? 'restaurants' : 'entertainment',
+                place,
+              }))
+              .catch(() => undefined);
+          } else if (payload.movie_id) {
+            request<Movie[]>(`/sessions/${payload.session_id}/movies?limit=50`, {}, token)
+              .then(movies => {
+                const movie = movies.find(item => item.id === payload.movie_id) ?? null;
+                setMatchResult(movie ? { kind: 'movie', category: 'movies', movie } : null);
+              })
+              .catch(() => undefined);
+          }
         }
         if (msg.type === 'SESSION_FINISHED') setSession(prev => prev ? { ...prev, status: 'FINISHED' } : prev);
       } catch {
@@ -139,8 +164,8 @@ function App() {
       {screen === 'auth' && <Auth mode={authMode} error={error} onModeChange={(mode) => { setError(''); setAuthMode(mode); }} onBack={() => { setError(''); setScreen('landing'); }} onSubmit={handleAuth} />}
       {authenticated && screen === 'home' && <Home user={user} token={token} onOpenSettings={() => setScreen('settings')} onRoom={(r) => { setRoom(r); setScreen('room'); }} onError={setError} error={error} />}
       {authenticated && screen === 'room' && room && <RoomLobby user={user} token={token} room={room} onBack={() => setScreen('home')} onRoomChange={setRoom} onStarted={(s) => { setSession(s); setScreen('session'); }} onError={setError} />}
-      {authenticated && screen === 'session' && session && room && <MovieSession token={token} session={session} room={room} onMatch={(movie) => { setMatchMovie(movie); setScreen('match'); }} onFinish={() => { setScreen('home'); setSession(null); }} />}
-      {authenticated && screen === 'match' && room && <MatchScreen movie={matchMovie} onBack={() => setScreen('home')} />}
+      {authenticated && screen === 'session' && session && room && <SearchSession token={token} session={session} room={room} onMatch={(result) => { setMatchResult(result); setScreen('match'); }} onFinish={() => { setScreen('home'); setSession(null); }} />}
+      {authenticated && screen === 'match' && room && <MatchScreen result={matchResult} onBack={() => setScreen('home')} />}
       {authenticated && screen === 'settings' && <Settings user={user} onBack={() => setScreen('home')} onLogout={logout} onEditAge={() => setAgeGateOpen(true)} />}
       {error && screen === 'home' && <div className="toast" role="alert">{error}<button onClick={() => setError('')}>×</button></div>}
       {authenticated && ageGateOpen && <AgeGate user={user} saving={ageSaving} required={!user?.birth_date} onSave={saveBirthDate} onClose={() => !user?.birth_date ? undefined : setAgeGateOpen(false)} />}
@@ -193,10 +218,11 @@ function Home({ user, token, onOpenSettings, onRoom, onError, error }: { user: U
   const [name, setName] = useState('Movie Night');
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
+  const [task, setTask] = useState<SearchMode>('movies');
   const create = async () => {
     setLoading(true);
     try {
-      const created = await request<Room>('/rooms', { method: 'POST', body: JSON.stringify({ name }) }, token);
+      const created = await request<Room>('/rooms', { method: 'POST', body: JSON.stringify({ name, task }) }, token);
       const detail = await request<Room>(`/rooms/${created.id}`, {}, token);
       onRoom(detail);
       setCreateOpen(false);
@@ -254,28 +280,100 @@ function RoomLobby({ user, token, room, onBack, onRoomChange, onStarted, onError
   </Shell>;
 }
 
-function MovieSession({ token, session, room, onMatch, onFinish }: { token: string; session: Session; room: Room; onMatch: (m: Movie) => void; onFinish: () => void }) {
+function SearchSession({ token, session, room, onMatch, onFinish }: { token: string; session: Session; room: Room; onMatch: (result: MatchResult) => void; onFinish: () => void }) {
+  const [mode, setMode] = useState<SearchMode>('movies');
   const [movies, setMovies] = useState<Movie[]>([]);
+  const [places, setPlaces] = useState<Place[]>([]);
   const [index, setIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
   const [palette, setPalette] = useState<Palette>(FALLBACK_PALETTE);
-  const movie = movies[index];
+  const [city, setCity] = useState<string | null>(null);
+  const [geoDenied, setGeoDenied] = useState(false);
+  const coordsRef = useRef<Coords | null>(null);
 
-  const load = async () => {
+  const movie = movies[index];
+  const place = places[index];
+  const item = mode === 'movies' ? movie : place;
+
+  const loadFeed = useMemo(() => async (targetMode: SearchMode) => {
     setLoading(true);
     setMsg('');
+    setIndex(0);
     try {
-      const items = await request<Movie[]>(`/sessions/${session.id}/movies?limit=8&exploration_ratio=0.25`, {}, token);
-      setMovies(items);
-      setIndex(0);
+      if (targetMode === 'movies') {
+        const items = await request<Movie[]>(`/sessions/${session.id}/movies?limit=8&exploration_ratio=0.25`, {}, token);
+        setMovies(items);
+        setPlaces([]);
+        return;
+      }
+      let current = coordsRef.current;
+      if (!current) {
+        try {
+          const located = await getCurrentCity();
+          current = located.coords;
+          coordsRef.current = located.coords;
+          setCity(located.city);
+        } catch {
+          setGeoDenied(true);
+          setLoading(false);
+          setMsg('Разрешите доступ к геолокации — заведения ищем рядом с вами.');
+          return;
+        }
+      }
+      const items = await placesApi.forSession(session.id, token, targetMode, current);
+      setPlaces(items);
+      setMovies([]);
     } catch (e) {
-      setMsg(e instanceof Error ? e.message : 'Не удалось загрузить фильмы');
-    } finally { setLoading(false); }
-  };
+      setMsg(e instanceof Error ? e.message : 'Не удалось загрузить подборку');
+    } finally {
+      setLoading(false);
+    }
+  }, [session.id, token]);
 
-  useEffect(() => { load(); }, [session.id]);
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setMsg('');
+    setIndex(0);
+    setGeoDenied(false);
+    if (mode === 'movies') {
+      request<Movie[]>(`/sessions/${session.id}/movies?limit=8&exploration_ratio=0.25`, {}, token)
+        .then(items => { if (active) { setMovies(items); setPlaces([]); } })
+        .catch(e => { if (active) setMsg(e instanceof Error ? e.message : 'Не удалось загрузить фильмы'); })
+        .finally(() => { if (active) setLoading(false); });
+      return () => { active = false; };
+    }
+    (async () => {
+      let current = coordsRef.current;
+      if (!current) {
+        try {
+          const located = await getCurrentCity();
+          current = located.coords;
+          coordsRef.current = located.coords;
+          if (active) setCity(located.city);
+        } catch {
+          if (active) {
+            setGeoDenied(true);
+            setLoading(false);
+            setMsg('Разрешите доступ к геолокации — заведения ищем рядом с вами.');
+          }
+          return;
+        }
+      }
+      try {
+        const items = await placesApi.forSession(session.id, token, mode, current);
+        if (active) { setPlaces(items); setMovies([]); }
+      } catch (e) {
+        if (active) setMsg(e instanceof Error ? e.message : 'Не удалось найти заведения рядом');
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+    return () => { active = false; };
+  }, [mode, session.id, token]);
+
   useEffect(() => {
     if (!movie?.poster_url) {
       setPalette(FALLBACK_PALETTE);
@@ -284,43 +382,70 @@ function MovieSession({ token, session, room, onMatch, onFinish }: { token: stri
     extractPalette(movie.poster_url).then(setPalette).catch(() => setPalette(FALLBACK_PALETTE));
   }, [movie?.poster_url]);
 
-  const style = {
-    '--poster-primary': palette.primary,
-    '--poster-secondary': palette.secondary,
-    '--poster-glow': palette.glow,
-    '--poster-ink': palette.ink,
-  } as React.CSSProperties;
+  const pageStyle = mode === 'movies'
+    ? {
+        '--poster-primary': palette.primary,
+        '--poster-secondary': palette.secondary,
+        '--poster-glow': palette.glow,
+        '--poster-ink': palette.ink,
+      }
+    : {
+        '--poster-primary': mode === 'restaurants' ? '#efbd42' : '#f06aa7',
+        '--poster-secondary': mode === 'restaurants' ? '#f06aa7' : '#efbd42',
+        '--poster-glow': mode === 'restaurants' ? 'rgba(239,189,66,.3)' : 'rgba(240,106,167,.3)',
+        '--poster-ink': '#121212',
+      };
+  const pageStyleVar = pageStyle as React.CSSProperties;
+  const swatchPrimary = mode === 'movies' ? palette.primary : pageStyle['--poster-primary'];
+  const swatchSecondary = mode === 'movies' ? palette.secondary : pageStyle['--poster-secondary'];
 
   const vote = async (value: VoteValue) => {
-    if (!movie || busy) return;
+    if (!item || busy) return;
     setBusy(true);
     setMsg('');
     try {
-      const result = await request<{ matched: boolean; match: unknown }>(`/sessions/${session.id}/votes`, { method: 'POST', body: JSON.stringify({ movie_id: movie.id, value }) }, token);
-      if (result.matched) {
-        onMatch(movie);
-        return;
+      if (mode === 'movies') {
+        const result = await request<{ matched: boolean }>(`/sessions/${session.id}/votes`, { method: 'POST', body: JSON.stringify({ movie_id: movie.id, value }) }, token);
+        if (result.matched) {
+          onMatch({ kind: 'movie', category: 'movies', movie });
+          return;
+        }
+      } else {
+        const result = await request<{ matched: boolean }>(`/sessions/${session.id}/votes`, { method: 'POST', body: JSON.stringify({ place_id: place.id, category: mode === 'restaurants' ? 'RESTAURANT' : 'ENTERTAINMENT', value }) }, token);
+        if (result.matched) {
+          onMatch({ kind: 'place', category: mode, place });
+          return;
+        }
       }
-      if (index + 1 >= movies.length) await load();
+      if (index + 1 >= (mode === 'movies' ? movies : places).length) await loadFeed(mode);
       else setIndex(i => i + 1);
     } catch (e) {
       setMsg(e instanceof Error ? e.message : 'Не удалось сохранить выбор');
     } finally { setBusy(false); }
   };
 
-  return <div className="movie-session-page" style={style}>
+  const heading = MODE_OPTIONS.find(option => option.mode === mode);
+  const area = mode === 'movies' ? 'EXPLORE · 25%' : 'NEAR · OPENSTREETMAP';
+  const title = mode === 'movies'
+    ? <>Найдём <span>ваш фильм.</span></>
+    : mode === 'restaurants'
+      ? <>Выберем, <span>где поесть.</span></>
+      : <>Куда <span>сходить.</span></>;
+
+  return <div className={`movie-session-page search-session-page`} style={pageStyleVar}>
     <div className="cinematic-backdrop" style={{ backgroundImage: movie?.backdrop_url || movie?.poster_url ? `url(${movie.backdrop_url || movie.poster_url})` : undefined }} />
     <div className="cinematic-tint" />
     <main className="page movie-page">
       <div className="nav"><div className="brand"><span className="brand-mark">M</span><span>MOVIE<span>MATCH</span></span></div><div className="nav-actions"><button className="nav-link" onClick={onFinish}>завершить</button></div></div>
       <div className="page-inner movie-page-inner">
-        <div className="session-top"><div><span className="eyebrow">ROOM · {room.code}</span><h1>Найдём <span>ваш фильм.</span></h1></div><div className="poster-swatch"><span style={{ background: palette.primary }} /><span style={{ background: palette.secondary }} /></div></div>
-        {loading ? <div className="loading-card movie-loading">Подбираем фильмы…</div> : movie ? <MovieCard movie={movie} busy={busy} onVote={vote} /> : <div className="empty-card">{msg || 'Фильмы закончились.'}<button className="btn btn-dark" onClick={load}>Обновить</button></div>}
-        <div className="progress-line movie-progress"><span style={{ width: `${Math.min(100, ((index + 1) / Math.max(movies.length, 1)) * 100)}%` }} /></div>
-        <div className="session-footnote"><span>{Math.min(index + 1, movies.length || 0)} / {movies.length || '—'}</span><span>EXPLORE · 25%</span></div>
-        {msg && <div className="form-error">{msg}</div>}
+        <div className="session-top"><div><span className="eyebrow">ROOM · {room.code}{mode === 'movies' ? '' : ` · ${city ?? 'РЯДОМ С ВАМИ'}`}</span><h1>{title}</h1></div><div className="poster-swatch"><span style={{ background: swatchPrimary }} /><span style={{ background: swatchSecondary }} /></div></div>
+        {loading ? <div className="loading-card movie-loading">{mode === 'movies' ? 'Подбираем фильмы…' : 'Ищем заведения рядом…'}</div> : item ? (mode === 'movies' ? <MovieCard movie={movie} busy={busy} onVote={vote} /> : <PlaceCard place={place} busy={busy} onVote={vote} />) : <div className="empty-card">{msg || 'Подборка закончилась.'}{geoDenied ? <button className="btn btn-primary" onClick={() => { coordsRef.current = null; setGeoDenied(false); loadFeed(mode); }}>Разрешить геолокацию</button> : <button className="btn btn-dark" onClick={() => loadFeed(mode)}>Обновить</button>}</div>}
+        <div className="progress-line movie-progress"><span style={{ width: `${Math.min(100, ((index + 1) / Math.max((mode === 'movies' ? movies : places).length, 1)) * 100)}%` }} /></div>
+        <div className="session-footnote"><span>{Math.min(index + 1, (mode === 'movies' ? movies : places).length || 0)} / {(mode === 'movies' ? movies : places).length || '—'}</span><span>{heading?.label} · {area}</span></div>
+        {msg && !geoDenied && <div className="form-error">{msg}</div>}
       </div>
     </main>
+    <ModeCircle mode={mode} onModeChange={setMode} />
   </div>;
 }
 
@@ -338,19 +463,48 @@ function MovieCard({ movie, busy, onVote }: { movie: Movie; busy: boolean; onVot
   </div>;
 }
 
-function MatchScreen({ movie, onBack }: { movie: Movie | null; onBack: () => void }) {
+function MatchScreen({ result, onBack }: { result: MatchResult | null; onBack: () => void }) {
+  const movie = result?.kind === 'movie' ? result.movie : null;
+  const place = result?.kind === 'place' ? result.place : null;
   const [palette, setPalette] = useState<Palette>(FALLBACK_PALETTE);
   useEffect(() => { if (movie?.poster_url) extractPalette(movie.poster_url).then(setPalette).catch(() => undefined); }, [movie?.poster_url]);
-  const style = { '--poster-primary': palette.primary, '--poster-secondary': palette.secondary, '--poster-glow': palette.glow } as React.CSSProperties;
+
+  const primary = movie ? palette.primary : place?.category === 'RESTAURANT' ? '#efbd42' : '#f06aa7';
+  const secondary = movie ? palette.secondary : place?.category === 'RESTAURANT' ? '#f06aa7' : '#efbd42';
+  const glow = movie ? palette.glow : place?.category === 'RESTAURANT' ? 'rgba(239,189,66,.3)' : 'rgba(240,106,167,.3)';
+  const style = { '--poster-primary': primary, '--poster-secondary': secondary, '--poster-glow': glow } as React.CSSProperties;
+
+  const mapUrl = place ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${place.latitude},${place.longitude}`)}` : null;
+  const tags = place ? (place.tags.length > 0 ? place.tags : (place.cuisine ?? '').split(';').map(s => s.trim()).filter(Boolean).slice(0, 4)) : [];
+
   return <div className="match-page" style={style}>
     <div className="match-glow" />
     <main className="page match-inner-page">
       <div className="nav"><div className="brand"><span className="brand-mark">M</span><span>MOVIE<span>MATCH</span></span></div><div className="nav-actions"><button className="nav-link" onClick={onBack}>на главную</button></div></div>
       <div className="page-inner">
-        <div className="hero-copy"><span className="eyebrow">MATCH FOUND</span><h1>Кажется, у вас <span>совпадение.</span></h1><p>Все участники выбрали один фильм. Вечер уже практически спасён.</p></div>
+        <div className="hero-copy"><span className="eyebrow">MATCH FOUND</span><h1>Кажется, у вас <span>совпадение.</span></h1><p>{result?.kind === 'place' ? 'Все участники выбрали одно место. Осталось только дойти.' : 'Все участники выбрали один фильм. Вечер уже практически спасён.'}</p></div>
         <div className="match-card-enhanced">
           {movie?.poster_url && <div className="match-poster" style={{ backgroundImage: `url(${movie.poster_url})` }}><div className="match-poster-glow" /></div>}
-          <div className="match-copy"><span className="match-kicker">TONIGHT’S PICK</span><h2>{movie?.title ?? 'Ваш фильм'}</h2><p>{movie?.overview ?? 'Совпадение найдено всеми участниками комнаты.'}</p><div className="tag-row">{movie?.genres.slice(0, 4).map(g => <span className="tag dark" key={g.id}>{g.name}</span>)}</div>{movie?.trailer_url && <a className="btn btn-primary wide" href={movie.trailer_url} target="_blank" rel="noreferrer">Открыть трейлер →</a>}</div>
+          {result?.kind === 'place' && place && <div className="match-place-media"><div className="icon-scaffold"><PlaceCategoryIcon category={place.category} size={76} /></div><span className="match-kicker" style={{ color: 'rgba(255,255,255,.8)' }}>{place.category === 'RESTAURANT' ? 'RESTAURANT' : 'ENTERTAINMENT'} · {place.city ?? 'рядом с вами'}</span><h2 style={{ fontSize: 'clamp(32px,4vw,56px)', margin: '10px 0 0', letterSpacing: '-.04em', textAlign: 'center' }}>{place.name}</h2></div>}
+          <div className="match-copy">
+            {result?.kind === 'place' && place ? <>
+              <span className="match-kicker">TONIGHT’S PICK</span>
+              <h2>{place.name}</h2>
+              <p>{place.address || 'Адрес пока недоступен.'}</p>
+              {tags.length > 0 && <div className="tag-row">{tags.slice(0, 4).map(tag => <span className="tag dark" key={tag}>{tag}</span>)}</div>}
+              {place.opening_hours && <p className="hint" style={{ marginTop: 12 }}>{place.opening_hours}</p>}
+              <div className="place-actions wide">
+                {(place.website || place.phone) && <a className="btn btn-dark" href={place.website ?? `tel:${place.phone}`} target={place.website ? '_blank' : undefined} rel="noreferrer">Сайт ↗</a>}
+                {mapUrl && <a className="btn btn-primary" href={mapUrl} target="_blank" rel="noreferrer">Открыть на карте →</a>}
+              </div>
+            </> : <>
+              <span className="match-kicker">TONIGHT’S PICK</span>
+              <h2>{movie?.title ?? 'Ваш фильм'}</h2>
+              <p>{movie?.overview ?? 'Совпадение найдено всеми участниками комнаты.'}</p>
+              <div className="tag-row">{movie?.genres.slice(0, 4).map(g => <span className="tag dark" key={g.id}>{g.name}</span>)}</div>
+              {movie?.trailer_url && <a className="btn btn-primary wide" href={movie.trailer_url} target="_blank" rel="noreferrer">Открыть трейлер →</a>}
+            </>}
+          </div>
         </div>
         <button className="btn btn-ghost wide" onClick={onBack}>Вернуться на главную</button>
       </div>
