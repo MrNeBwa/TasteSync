@@ -20,7 +20,9 @@ from app.modules.sessions.service import (
     SessionNotFoundError,
     SessionNotMemberError,
 )
+from app.modules.places.service import PlaceNotFoundError
 from app.repositories.movie_repository import MovieRepository
+from app.repositories.place_repository import PlaceRepository
 from app.repositories.room_repository import RoomRepository
 from app.repositories.session_repository import SessionRepository
 from app.websocket.manager import manager
@@ -50,6 +52,7 @@ def service(session: AsyncSession) -> MovieSessionService:
         SessionRepository(session),
         RoomRepository(session),
         MovieRepository(session),
+        PlaceRepository(session),
     )
 
 
@@ -120,13 +123,25 @@ async def vote(
     db: AsyncSession = Depends(get_db_session),
 ) -> VoteResponse:
     svc = service(db)
+    match_id: UUID | None = None
     try:
-        _vote, match = await svc.vote(
-            session_id=session_id,
-            user_id=current_user.id,
-            movie_id=payload.movie_id,
-            value=payload.value,
-        )
+        if payload.place_id is not None:
+            _vote, match = await svc.vote_place(
+                session_id=session_id,
+                user_id=current_user.id,
+                place_id=payload.place_id,
+                value=payload.value,
+            )
+            match_id = getattr(match, "id", None)
+        else:
+            assert payload.movie_id is not None
+            _vote, match = await svc.vote(
+                session_id=session_id,
+                user_id=current_user.id,
+                movie_id=payload.movie_id,
+                value=payload.value,
+            )
+            match_id = getattr(match, "id", None)
         await db.commit()
     except SessionNotFoundError as exc:
         await db.rollback()
@@ -137,12 +152,12 @@ async def vote(
     except SessionNotActiveError as exc:
         await db.rollback()
         raise HTTPException(status_code=409, detail="Session is not active") from exc
-    except MovieNotFoundError as exc:
+    except (MovieNotFoundError, PlaceNotFoundError) as exc:
         await db.rollback()
-        raise HTTPException(status_code=404, detail="Movie not found") from exc
+        raise HTTPException(status_code=404, detail="Item not found") from exc
     except DuplicateVoteError as exc:
         await db.rollback()
-        raise HTTPException(status_code=409, detail="User already voted for this movie") from exc
+        raise HTTPException(status_code=409, detail="User already voted for this item") from exc
     except IntegrityError as exc:
         await db.rollback()
         raise HTTPException(status_code=409, detail="Vote already exists") from exc
@@ -152,6 +167,10 @@ async def vote(
             session_id=session_id,
             user_id=current_user.id,
         )
+        category = payload.category
+        if category is None and payload.place_id is not None:
+            place = await svc.places.get_by_id(payload.place_id)
+            category = place.category if place is not None else None
         await manager.broadcast(
             matched_session.room_id,
             {
@@ -159,8 +178,10 @@ async def vote(
                 "room_id": str(matched_session.room_id),
                 "payload": {
                     "session_id": str(session_id),
-                    "movie_id": str(payload.movie_id),
-                    "match_id": str(match.id),
+                    "category": category.value if category is not None else "movies",
+                    "movie_id": str(payload.movie_id) if payload.movie_id is not None else None,
+                    "place_id": str(payload.place_id) if payload.place_id is not None else None,
+                    "match_id": str(match_id) if match_id is not None else None,
                 },
             },
         )
@@ -168,9 +189,11 @@ async def vote(
     return VoteResponse(
         session_id=session_id,
         movie_id=payload.movie_id,
+        place_id=payload.place_id,
+        category=payload.category,
         value=payload.value,
         matched=match is not None,
-        match=MatchResponse.model_validate(match) if match is not None else None,
+        match=match,
     )
 
 

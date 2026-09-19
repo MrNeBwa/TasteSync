@@ -3,12 +3,13 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from app.models.room import RoomStatus
+from app.models.room import RoomStatus, RoomTask
 from app.models.room_member import RoomMemberRole
 
 
 class CreateRoomRequest(BaseModel):
     name: str = Field(min_length=1, max_length=120)
+    task: RoomTask = RoomTask.MOVIES
 
 
 class JoinRoomRequest(BaseModel):
@@ -29,6 +30,7 @@ class RoomResponse(BaseModel):
     code: str
     owner_id: UUID
     status: RoomStatus
+    task: RoomTask = RoomTask.MOVIES
     created_at: datetime
 
     model_config = {"from_attributes": True}

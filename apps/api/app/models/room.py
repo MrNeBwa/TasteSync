@@ -24,6 +24,12 @@ class RoomStatus(StrEnum):
     FINISHED = "FINISHED"
 
 
+class RoomTask(StrEnum):
+    MOVIES = "movies"
+    RESTAURANTS = "restaurants"
+    ENTERTAINMENT = "entertainment"
+
+
 class Room(Base):
     __tablename__ = "rooms"
 
@@ -34,6 +40,7 @@ class Room(Base):
         PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
     )
     status: Mapped[RoomStatus] = mapped_column(String(20), default=RoomStatus.WAITING, nullable=False)
+    task: Mapped[RoomTask] = mapped_column(String(20), default=RoomTask.MOVIES, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
