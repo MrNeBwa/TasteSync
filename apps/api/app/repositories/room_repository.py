@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.room import Room
+from app.models.room import Room, RoomTask
 from app.models.room_member import RoomMember, RoomMemberRole
 from app.models.user import User
 
@@ -69,12 +69,12 @@ class RoomRepository:
     async def remove_member(self, membership: RoomMember) -> None:
         await self.session.delete(membership)
 
-    async def create_room(self, *, name: str, owner: User) -> Room:
+    async def create_room(self, *, name: str, owner: User, task: RoomTask = RoomTask.MOVIES) -> Room:
         alphabet = ascii_uppercase + digits
         for _ in range(10):
             code = "".join(choice(alphabet) for _ in range(6))
             if not await self.code_exists(code):
-                room = Room(name=name, code=code, owner_id=owner.id)
+                room = Room(name=name, code=code, owner_id=owner.id, task=task)
                 self.session.add(room)
                 await self.session.flush()
                 self.session.add(
