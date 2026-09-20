@@ -3,12 +3,13 @@ import { apiFetch as request } from '../shared/api/client';
 import { getRuntimeWsBaseUrl } from '../shared/api/config';
 import { clearTokens, getAccessToken, saveTokens } from '../shared/lib/storage';
 import { getYouTubeEmbedUrl } from '../shared/lib/youtube';
-import { getCurrentCity, getCurrentCoords } from '../shared/lib/geo';
+import { getCurrentCity, geocodeCity, isGeoSupported } from '../shared/lib/geo';
 import { placesApi } from '../features/places/api';
+import { roomsApi } from '../features/rooms/api';
 import { ModeCircle, MODE_OPTIONS } from '../components/ModeCircle';
 import { PlaceCard } from '../components/PlaceCard';
-import { PlaceCategoryIcon } from '../components/icons';
-import type { AuthMode, Coords, Genre, MatchResult, Movie, Palette, Place, Room, RoomMember, Screen, SearchMode, Session, User, VoteValue } from '../shared/types/domain';
+import { PlaceCategoryIcon, SearchModeIcon } from '../components/icons';
+import type { AuthMode, Coords, Genre, MatchResult, Movie, Palette, Place, Room, RoomMember, Screen, SearchMode, Session, User, UserLocation, VoteValue } from '../shared/types/domain';
 
 const FALLBACK_PALETTE: Palette = {
   primary: '#efbd42',
@@ -29,6 +30,7 @@ function App() {
   const [error, setError] = useState('');
   const [ageGateOpen, setAgeGateOpen] = useState(false);
   const [ageSaving, setAgeSaving] = useState(false);
+  const [location, setLocation] = useState<UserLocation | null>(null);
 
   const authenticated = Boolean(token && user);
 
@@ -66,6 +68,7 @@ function App() {
       try {
         const msg = JSON.parse(event.data) as { type: string; payload?: unknown };
         if (msg.type === 'ROOM_READY_CHANGED' && msg.payload && typeof msg.payload === 'object') setRoom(msg.payload as Room);
+        if (msg.type === 'ROOM_TASK_CHANGED' && msg.payload && typeof msg.payload === 'object') setRoom(msg.payload as Room);
         if (msg.type === 'SESSION_STARTED' && msg.payload && typeof msg.payload === 'object') {
           const payload = msg.payload as { session_id: string; room_id?: string; created_at?: string };
           setSession({ id: payload.session_id, room_id: payload.room_id ?? room.id, status: 'ACTIVE', created_at: payload.created_at ?? new Date().toISOString() });
@@ -124,6 +127,7 @@ function App() {
     setUser(null);
     setRoom(null);
     setSession(null);
+    setLocation(null);
     setScreen('landing');
   };
 
@@ -163,8 +167,8 @@ function App() {
       {screen === 'landing' && <Landing onAuth={(mode) => { setError(''); setAuthMode(mode); setScreen('auth'); }} />}
       {screen === 'auth' && <Auth mode={authMode} error={error} onModeChange={(mode) => { setError(''); setAuthMode(mode); }} onBack={() => { setError(''); setScreen('landing'); }} onSubmit={handleAuth} />}
       {authenticated && screen === 'home' && <Home user={user} token={token} onOpenSettings={() => setScreen('settings')} onRoom={(r) => { setRoom(r); setScreen('room'); }} onError={setError} error={error} />}
-      {authenticated && screen === 'room' && room && <RoomLobby user={user} token={token} room={room} onBack={() => setScreen('home')} onRoomChange={setRoom} onStarted={(s) => { setSession(s); setScreen('session'); }} onError={setError} />}
-      {authenticated && screen === 'session' && session && room && <SearchSession token={token} session={session} room={room} onMatch={(result) => { setMatchResult(result); setScreen('match'); }} onFinish={() => { setScreen('home'); setSession(null); }} />}
+      {authenticated && screen === 'room' && room && <RoomLobby user={user} token={token} room={room} onBack={() => setScreen('home')} onRoomChange={setRoom} onStarted={(s) => { setSession(s); setScreen('session'); }} onError={setError} location={location} onLocation={setLocation} />}
+      {authenticated && screen === 'session' && session && room && <SearchSession token={token} session={session} room={room} onMatch={(result) => { setMatchResult(result); setScreen('match'); }} onFinish={() => { setScreen('home'); setSession(null); }} location={location} onLocation={setLocation} />}
       {authenticated && screen === 'match' && room && <MatchScreen result={matchResult} onBack={() => setScreen('home')} />}
       {authenticated && screen === 'settings' && <Settings user={user} onBack={() => setScreen('home')} onLogout={logout} onEditAge={() => setAgeGateOpen(true)} />}
       {error && screen === 'home' && <div className="toast" role="alert">{error}<button onClick={() => setError('')}>×</button></div>}
@@ -218,11 +222,10 @@ function Home({ user, token, onOpenSettings, onRoom, onError, error }: { user: U
   const [name, setName] = useState('Movie Night');
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
-  const [task, setTask] = useState<SearchMode>('movies');
   const create = async () => {
     setLoading(true);
     try {
-      const created = await request<Room>('/rooms', { method: 'POST', body: JSON.stringify({ name, task }) }, token);
+      const created = await request<Room>('/rooms', { method: 'POST', body: JSON.stringify({ name }) }, token);
       const detail = await request<Room>(`/rooms/${created.id}`, {}, token);
       onRoom(detail);
       setCreateOpen(false);
@@ -252,11 +255,34 @@ function Home({ user, token, onOpenSettings, onRoom, onError, error }: { user: U
   </Shell>;
 }
 
-function RoomLobby({ user, token, room, onBack, onRoomChange, onStarted, onError }: { user: User | null; token: string; room: Room; onBack: () => void; onRoomChange: (r: Room) => void; onStarted: (s: Session) => void; onError: (e: string) => void }) {
+function RoomLobby({ user, token, room, onBack, onRoomChange, onStarted, onError, location, onLocation }: { user: User | null; token: string; room: Room; onBack: () => void; onRoomChange: (r: Room) => void; onStarted: (s: Session) => void; onError: (e: string) => void; location: UserLocation | null; onLocation: (l: UserLocation | null) => void }) {
   const me = room.members.find(m => m.user_id === user?.id);
   const allReady = room.members.length > 0 && room.members.every(m => m.is_ready);
   const isOwner = room.owner_id === user?.id;
+  const task = room.task ?? 'movies';
   const [starting, setStarting] = useState(false);
+  const [pendingTask, setPendingTask] = useState<SearchMode>(task);
+  const taskTimerRef = useRef<number | undefined>(undefined);
+  const taskSeqRef = useRef(0);
+  useEffect(() => () => window.clearTimeout(taskTimerRef.current), []);
+  useEffect(() => { setPendingTask(room.task ?? 'movies'); }, [room.task]);
+  const setTask = (next: SearchMode) => {
+    const seq = ++taskSeqRef.current;
+    setPendingTask(next);
+    window.clearTimeout(taskTimerRef.current);
+    taskTimerRef.current = window.setTimeout(async () => {
+      try {
+        const updated = await roomsApi.updateTask(room.id, next, token);
+        if (taskSeqRef.current !== seq) return;
+        onRoomChange(updated);
+      } catch (e) {
+        if (taskSeqRef.current === seq) {
+          onError(e instanceof Error ? e.message : 'Не удалось изменить категорию');
+          setPendingTask(room.task ?? 'movies');
+        }
+      }
+    }, 300);
+  };
   const setReady = async () => {
     try {
       const result = await request<{ room: Room; is_ready: boolean }>(`/rooms/${room.id}/ready?ready=${!me?.is_ready}`, { method: 'PATCH' }, token);
@@ -272,16 +298,91 @@ function RoomLobby({ user, token, room, onBack, onRoomChange, onStarted, onError
     finally { setStarting(false); }
   };
   const copyCode = () => navigator.clipboard?.writeText(room.code).catch(() => undefined);
-  return <Shell eyebrow="ROOM LOBBY" title={<>{room.name}<br /><span>{room.code}</span></>} subtitle="Все готовы? Тогда запускаем поиск фильма." actions={<button className="nav-link" onClick={onBack}>← выйти</button>}>
+  const heading = MODE_OPTIONS.find(option => option.mode === pendingTask);
+  const needsLocation = pendingTask !== 'movies';
+  const canReady = !needsLocation || Boolean(location);
+  return <Shell eyebrow="ROOM LOBBY" title={<>{room.name}<br /><span>{room.code}</span></>} subtitle="Выберите категорию для игры и ждите, пока все будут готовы." actions={<button className="nav-link" onClick={onBack}>← выйти</button>}>
     <div className="room-head"><div><span className="eyebrow">ROOM CODE</span><button className="code-pill" onClick={copyCode}>{room.code} ⧉</button></div><div className={`status-dot ${allReady ? 'ready' : ''}`}>{allReady ? 'Все готовы' : `${room.members.filter(m => m.is_ready).length}/${room.members.length} готовы`}</div></div>
+    <div className="lobby-category">
+      <div className="category-picker">
+        <span className="eyebrow">{isOwner ? 'Крутите колесо — выберите категорию' : 'Категория игры'}</span>
+        {isOwner
+          ? <ModeCircle inline mode={pendingTask} onModeChange={setTask} />
+          : <div className="category-picker-readout"><SearchModeIcon mode={pendingTask} size={20} /><span>{heading?.label ?? 'MOVIES'}</span></div>}
+        <div className="category-picker-foot">Будем искать: <strong>{heading?.label ?? 'MOVIES'}</strong>{!isOwner && ' · выбирает владелец'}</div>
+      </div>
+    </div>
+    {needsLocation && <div className="lobby-location">
+      <span className="eyebrow">ВАША ЛОКАЦИЯ</span>
+      <LocationPanel location={location} onLocation={onLocation} />
+      {!location && <p className="hint">Заведения ищем рядом с вами — разрешите геолокацию или укажите город. Кнопка «Готов» откроется после этого.</p>}
+    </div>}
     <div className="members-list">{room.members.map(m => <div className="member-row" key={m.user_id}><div className="member-avatar">{m.username.slice(0, 1).toUpperCase()}</div><div><strong>{m.username}{m.user_id === user?.id ? ' (вы)' : ''}</strong><small>{m.role === 'OWNER' ? 'owner' : m.is_ready ? 'готов' : 'ожидает'}</small></div><span className={`ready-badge ${m.is_ready ? 'on' : ''}`}>{m.is_ready ? 'READY' : '—'}</span></div>)}</div>
-    <div className="room-footer"><button className={`btn ${me?.is_ready ? 'btn-dark' : 'btn-primary'}`} onClick={setReady}>{me?.is_ready ? 'Я готов ✓' : 'Готов'}</button><button disabled={!isOwner || !allReady || starting} className="btn btn-dark" onClick={start}>{starting ? 'Запуск…' : isOwner ? 'Начать сессию →' : 'Ждём владельца'}</button></div>
-    {!isOwner && <p className="hint">Владелец комнаты запускает сессию после того, как все нажмут «Готов».</p>}
+    <div className="room-footer"><button className={`btn ${me?.is_ready ? 'btn-dark' : 'btn-primary'}`} onClick={setReady} disabled={!canReady}>{!canReady ? 'Сначала — геолокация' : me?.is_ready ? 'Я готов ✓' : 'Готов'}</button><button disabled={!isOwner || !allReady || starting} className="btn btn-dark" onClick={start}>{starting ? 'Запуск…' : isOwner ? 'Начать сессию →' : 'Ждём владельца'}</button></div>
+    {!isOwner && <p className="hint">Владелец комнаты выбирает категорию колесом и запускает сессию после того, как все нажмут «Готов».</p>}
   </Shell>;
 }
 
-function SearchSession({ token, session, room, onMatch, onFinish }: { token: string; session: Session; room: Room; onMatch: (result: MatchResult) => void; onFinish: () => void }) {
-  const [mode, setMode] = useState<SearchMode>('movies');
+function LocationPanel({ location, onLocation }: { location: UserLocation | null; onLocation: (l: UserLocation | null) => void }) {
+  const [opening, setOpening] = useState(false);
+  const [manual, setManual] = useState(false);
+  const [query, setQuery] = useState('');
+  const [searching, setSearching] = useState(false);
+  const [err, setErr] = useState('');
+  const supported = isGeoSupported();
+
+  if (location) {
+    const label = location.city ?? `${location.coords.latitude.toFixed(3)}, ${location.coords.longitude.toFixed(3)}`;
+    return <div className="location-chip ok"><span className="geo-dot" />{label}<button className="nav-link" onClick={() => onLocation(null)}>изменить</button></div>;
+  }
+
+  const open = async () => {
+    setOpening(true);
+    setErr('');
+    try {
+      const located = await getCurrentCity();
+      onLocation(located);
+    } catch {
+      setErr('Не получилось определить местоположение.');
+      setManual(true);
+    } finally {
+      setOpening(false);
+    }
+  };
+
+  const find = async () => {
+    if (!query.trim()) return;
+    setSearching(true);
+    setErr('');
+    try {
+      const found = await geocodeCity(query.trim());
+      if (!found) setErr('Город не найден');
+      else onLocation(found);
+    } catch {
+      setErr('Не удалось найти город');
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  return (
+    <div className="location-panel">
+      {supported && !manual ? (
+        <button className="btn btn-primary wide" onClick={open} disabled={opening}>{opening ? 'Определяем…' : 'Разрешить геолокацию'}</button>
+      ) : (
+        <div className="location-manual">
+          <input className="location-city-input" value={query} onChange={e => setQuery(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') find(); }} placeholder="Город, например Москва" />
+          <button className="btn btn-dark" onClick={find} disabled={searching || !query.trim()}>{searching ? 'Ищем…' : 'Найти'}</button>
+        </div>
+      )}
+      {err && <div className="form-error">{err}</div>}
+      {supported && !manual && <button type="button" className="switch-link" onClick={() => setManual(true)}>Геолокация не работает? Укажите город вручную</button>}
+    </div>
+  );
+}
+
+function SearchSession({ token, session, room, onMatch, onFinish, location, onLocation }: { token: string; session: Session; room: Room; onMatch: (result: MatchResult) => void; onFinish: () => void; location: UserLocation | null; onLocation: (l: UserLocation | null) => void }) {
+  const mode = room.task ?? 'movies';
   const [movies, setMovies] = useState<Movie[]>([]);
   const [places, setPlaces] = useState<Place[]>([]);
   const [index, setIndex] = useState(0);
@@ -292,6 +393,13 @@ function SearchSession({ token, session, room, onMatch, onFinish }: { token: str
   const [city, setCity] = useState<string | null>(null);
   const [geoDenied, setGeoDenied] = useState(false);
   const coordsRef = useRef<Coords | null>(null);
+
+  useEffect(() => {
+    if (location) {
+      coordsRef.current = location.coords;
+      setCity(location.city);
+    }
+  }, [location]);
 
   const movie = movies[index];
   const place = places[index];
@@ -439,13 +547,12 @@ function SearchSession({ token, session, room, onMatch, onFinish }: { token: str
       <div className="nav"><div className="brand"><span className="brand-mark">M</span><span>MOVIE<span>MATCH</span></span></div><div className="nav-actions"><button className="nav-link" onClick={onFinish}>завершить</button></div></div>
       <div className="page-inner movie-page-inner">
         <div className="session-top"><div><span className="eyebrow">ROOM · {room.code}{mode === 'movies' ? '' : ` · ${city ?? 'РЯДОМ С ВАМИ'}`}</span><h1>{title}</h1></div><div className="poster-swatch"><span style={{ background: swatchPrimary }} /><span style={{ background: swatchSecondary }} /></div></div>
-        {loading ? <div className="loading-card movie-loading">{mode === 'movies' ? 'Подбираем фильмы…' : 'Ищем заведения рядом…'}</div> : item ? (mode === 'movies' ? <MovieCard movie={movie} busy={busy} onVote={vote} /> : <PlaceCard place={place} busy={busy} onVote={vote} />) : <div className="empty-card">{msg || 'Подборка закончилась.'}{geoDenied ? <button className="btn btn-primary" onClick={() => { coordsRef.current = null; setGeoDenied(false); loadFeed(mode); }}>Разрешить геолокацию</button> : <button className="btn btn-dark" onClick={() => loadFeed(mode)}>Обновить</button>}</div>}
+        {loading ? <div className="loading-card movie-loading">{mode === 'movies' ? 'Подбираем фильмы…' : 'Ищем заведения рядом…'}</div> : item ? (mode === 'movies' ? <MovieCard movie={movie} busy={busy} onVote={vote} /> : <PlaceCard place={place} busy={busy} onVote={vote} />) : <div className="empty-card">{msg || 'Подборка закончилась.'}{geoDenied ? <div className="empty-actions"><LocationPanel location={location} onLocation={(l) => { onLocation(l); if (l) { coordsRef.current = l.coords; setCity(l.city); setGeoDenied(false); loadFeed(mode); } }} /></div> : <button className="btn btn-dark" onClick={() => loadFeed(mode)}>Обновить</button>}</div>}
         <div className="progress-line movie-progress"><span style={{ width: `${Math.min(100, ((index + 1) / Math.max((mode === 'movies' ? movies : places).length, 1)) * 100)}%` }} /></div>
         <div className="session-footnote"><span>{Math.min(index + 1, (mode === 'movies' ? movies : places).length || 0)} / {(mode === 'movies' ? movies : places).length || '—'}</span><span>{heading?.label} · {area}</span></div>
         {msg && !geoDenied && <div className="form-error">{msg}</div>}
       </div>
     </main>
-    <ModeCircle mode={mode} onModeChange={setMode} />
   </div>;
 }
 

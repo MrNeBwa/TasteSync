@@ -18,7 +18,7 @@ function normalizeWheel(acc: number): { steps: number; rest: number } {
   return { steps: step, rest: acc - step * 60 };
 }
 
-export function ModeCircle({ mode, onModeChange }: { mode: SearchMode; onModeChange: (mode: SearchMode) => void }) {
+export function ModeCircle({ mode, onModeChange, inline = false }: { mode: SearchMode; onModeChange: (mode: SearchMode) => void; inline?: boolean }) {
   const index = MODE_OPTIONS.findIndex((option) => option.mode === mode);
   const [drag, setDrag] = useState<number | null>(null);
   const [wheelAcc, setWheelAcc] = useState(0);
@@ -97,7 +97,7 @@ export function ModeCircle({ mode, onModeChange }: { mode: SearchMode; onModeCha
   const wheelRotationDeg = -(index * NOTCH + (rotation === null ? 0 : rotation));
 
   return (
-    <div className="mode-dial" role="group" aria-label="Mode selector">
+    <div className={`mode-dial ${inline ? 'inline' : ''}`} role="group" aria-label="Mode selector">
       <div className="mode-dial-hud">
         {MODE_OPTIONS.map((option, i) => (
           <button

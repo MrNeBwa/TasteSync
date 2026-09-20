@@ -100,6 +100,23 @@ class RoomService:
         assert room is not None
         return room
 
+    async def update_task(self, *, room_id: UUID, user_id: UUID, task: RoomTask) -> Room:
+        room = await self.repository.get_by_id(room_id, with_members=True)
+        if room is None:
+            raise RoomNotFoundError
+        if room.owner_id != user_id:
+            raise NotOwnerError
+        if room.status not in {RoomStatus.WAITING, RoomStatus.READY}:
+            raise InvalidRoomStateError("The game has already started")
+        room.task = task
+        for member in room.members:
+            member.is_ready = False
+        room.status = RoomStatus.WAITING
+        await self.repository.session.flush()
+        room = await self.repository.get_by_id(room.id, with_members=True)
+        assert room is not None
+        return room
+
     async def start_session(self, *, room_id: UUID, user_id: UUID) -> Room:
         room = await self.repository.get_by_id(room_id, with_members=True)
         if room is None:

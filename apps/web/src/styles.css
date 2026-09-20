@@ -34,8 +34,21 @@
 @media(max-width:560px){.trailer-status{font-size:8px}.movie-session-page .movie-page,.match-page .match-inner-page{background:rgba(245,243,237,.78)}}
 
 /* v1.6 search modes: rotatable dial + place cards */
-.search-session-page .movie-page-inner{padding-bottom:230px}
 .mode-dial{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);z-index:60;display:flex;flex-direction:column;align-items:center;gap:8px}
+.mode-dial.inline{position:relative;left:auto;bottom:auto;transform:none;z-index:auto}
+.category-picker{display:grid;justify-items:center;gap:14px;padding:30px 26px 26px;border:2px solid #111;border-radius:26px;background:#fff;box-shadow:10px 10px 0 #111}
+.category-picker-readout{display:flex;align-items:center;gap:9px;font:700 12px DM Mono,monospace;letter-spacing:.1em;color:#5a5852}
+.category-picker-readout svg{flex:none}
+.lobby-location{display:grid;gap:12px;justify-items:start;margin-top:22px;padding:22px 24px;border:2px solid #111;border-radius:20px;background:#fbfaf6}
+.location-chip{display:inline-flex;align-items:center;gap:9px;padding:11px 14px;border-radius:999px;border:2px solid #111;background:#e6f4e0;font:700 12px DM Mono,monospace;letter-spacing:.06em}
+.location-chip .nav-link{padding:0 4px}
+.geo-dot{width:10px;height:10px;border-radius:50%;background:#4caf50;box-shadow:0 0 0 4px rgba(76,175,80,.25)}
+.location-panel{display:grid;gap:10px;justify-items:start;min-width:100%}
+.location-panel .btn{width:auto}
+.location-manual{display:flex;gap:10px;flex-wrap:wrap;width:100%}
+.location-city-input{flex:1;min-width:200px;border:2px solid #bbb;background:#faf9f5;border-radius:12px;padding:14px 15px;outline:none;font:inherit}
+.location-city-input:focus{border-color:#111}
+.empty-actions{margin-top:16px;display:grid;justify-items:start;gap:10px}
 .mode-dial-track{position:relative;pointer-events:none}
 .mode-dial-hud{display:flex;gap:4px;padding:5px;background:rgba(245,243,237,.95);border:2px solid #111;border-radius:999px;box-shadow:6px 6px 0 rgba(17,17,17,.9);pointer-events:auto}
 .mode-hud-item{display:flex;align-items:center;gap:7px;padding:7px 13px;border:0;border-radius:999px;background:transparent;font:700 11px DM Mono,monospace;letter-spacing:.09em;color:#5a5852}
