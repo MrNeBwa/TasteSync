@@ -20,6 +20,10 @@ function getCurrentPosition(): Promise<GeoPosition> {
   });
 }
 
+export function isGeoSupported(): boolean {
+  return typeof navigator !== 'undefined' && 'geolocation' in navigator;
+}
+
 export async function getCurrentCoords(): Promise<Coords> {
   const position = await getCurrentPosition();
   return {
@@ -58,4 +62,43 @@ export async function getCurrentCity(): Promise<{ coords: Coords; city: string |
   const coords = await getCurrentCoords();
   const city = await reverseGeocode(coords);
   return { coords, city };
+}
+
+type GeocodeHit = { coords: Coords; city: string | null };
+
+export async function geocodeCity(query: string): Promise<GeocodeHit | null> {
+  try {
+    const url = new URL('https://nominatim.openstreetmap.org/search');
+    url.searchParams.set('format', 'jsonv2');
+    url.searchParams.set('q', query);
+    url.searchParams.set('limit', '5');
+    url.searchParams.set('addressdetails', '1');
+    const response = await fetch(url.toString(), {
+      headers: { Accept: 'application/json' },
+    });
+    if (!response.ok) return null;
+    const data = (await response.json()) as Array<{
+      lat: string;
+      lon: string;
+      address?: Record<string, string>;
+      display_name?: string;
+    }>;
+    const hit = data[0];
+    if (!hit) return null;
+    const address = hit.address ?? {};
+    const city =
+      address.city ??
+      address.town ??
+      address.village ??
+      address.municipality ??
+      address.county ??
+      (hit.display_name ? hit.display_name.split(',')[0].trim() : null) ??
+      null;
+    return {
+      coords: { latitude: Number(hit.lat), longitude: Number(hit.lon) },
+      city,
+    };
+  } catch {
+    return null;
+  }
 }

@@ -13,12 +13,14 @@ from app.modules.rooms.schemas import (
     RoomDetailResponse,
     RoomMemberResponse,
     RoomResponse,
+    UpdateRoomTaskRequest,
 )
 from app.modules.rooms.service import (
     AlreadyMemberError,
     CannotLeaveRoomError,
     InvalidRoomStateError,
     NotMemberError,
+    NotOwnerError,
     RoomNotFoundError,
     RoomService,
     UserNotFoundError,
@@ -153,6 +155,35 @@ async def set_ready(
         },
     )
     return ReadyResponse(room=detail, is_ready=ready)
+
+
+@router.patch("/{room_id}/task", response_model=RoomDetailResponse)
+async def update_room_task(
+    room_id: UUID,
+    payload: UpdateRoomTaskRequest,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> RoomDetailResponse:
+    service = RoomService(RoomRepository(session))
+    try:
+        room = await service.update_task(room_id=room_id, user_id=current_user.id, task=payload.task)
+        await session.commit()
+    except RoomNotFoundError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=404, detail="Room not found") from exc
+    except NotOwnerError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=403, detail="Only the room owner can change the category") from exc
+    except InvalidRoomStateError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    detail = room_detail(room)
+    await manager.broadcast(
+        room_id,
+        {"type": "ROOM_TASK_CHANGED", "room_id": str(room_id), "payload": detail.model_dump(mode="json")},
+    )
+    return detail
 
 
 @router.post("/{room_id}/start")

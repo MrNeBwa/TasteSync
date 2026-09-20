@@ -1,5 +1,5 @@
 import { apiFetch } from '../../shared/api';
-import type { Room } from '../../shared/types';
+import type { Room, SearchMode } from '../../shared/types';
 
 export const roomsApi = {
   create(name: string, token: string) {
@@ -18,6 +18,14 @@ export const roomsApi = {
       method: 'POST',
       body: JSON.stringify({ code }),
     }, token);
+  },
+
+  updateTask(roomId: string, task: SearchMode, token: string) {
+    return apiFetch<Room>(
+      `/rooms/${roomId}/task`,
+      { method: 'PATCH', body: JSON.stringify({ task }) },
+      token,
+    );
   },
 
   setReady(roomId: string, ready: boolean, token: string) {

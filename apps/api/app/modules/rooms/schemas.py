@@ -16,6 +16,10 @@ class JoinRoomRequest(BaseModel):
     code: str = Field(min_length=4, max_length=8)
 
 
+class UpdateRoomTaskRequest(BaseModel):
+    task: RoomTask
+
+
 class RoomMemberResponse(BaseModel):
     user_id: UUID
     username: str

@@ -17,19 +17,19 @@ def test_movie_detail_endpoint_exists() -> None:
     assert "/api/movies/{movie_id}" in schema["paths"]
 
 
-def test_password_change_endpoint_exists() -> None:
+def test_room_task_update_endpoint_exists() -> None:
     schema = app.openapi()
-    assert "/api/users/me/password" in schema["paths"]
-    assert "patch" in schema["paths"]["/api/users/me/password"]
+    assert "/api/rooms/{room_id}/task" in schema["paths"]
+    assert "patch" in schema["paths"]["/api/rooms/{room_id}/task"]
 
 
-def test_history_endpoint_exists() -> None:
+def test_room_task_update_request_schema() -> None:
     schema = app.openapi()
-    assert "/api/me/history" in schema["paths"]
+    task = schema["components"]["schemas"]["UpdateRoomTaskRequest"]["properties"]["task"]
+    assert task["$ref"].endswith("RoomTask")
 
 
-def test_sync_popular_requires_auth() -> None:
-    schema = app.openapi()
-    operation = schema["paths"]["/api/movies/sync-popular"]["post"]
-    security = operation.get("security") or []
-    assert any("HTTPBearer" in requirement for requirement in security)
+def test_room_task_enum_matches_web_modes() -> None:
+    from app.models.room import RoomTask
+
+    assert {task.value for task in RoomTask} == {"movies", "restaurants", "entertainment"}

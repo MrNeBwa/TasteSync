@@ -52,6 +52,8 @@ export type MatchResult =
 
 export type Coords = { latitude: number; longitude: number };
 
+export type UserLocation = { coords: Coords; city: string | null };
+
 export type User = {
   id: string;
   username: string;
