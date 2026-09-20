@@ -25,15 +25,39 @@ class SessionRepository:
             select(MovieSession)
             .where(
                 MovieSession.room_id == room_id,
-                MovieSession.status.in_([
-                    SessionStatus.CREATED,
-                    SessionStatus.ACTIVE,
-                    SessionStatus.MATCHED,
-                ]),
+                MovieSession.status.in_(
+                    [
+                        SessionStatus.CREATED,
+                        SessionStatus.ACTIVE,
+                        SessionStatus.MATCHED,
+                    ]
+                ),
             )
             .order_by(MovieSession.created_at.desc())
         )
         return await self.session.scalar(stmt)
+
+    async def get_latest_for_room(self, room_id: UUID) -> MovieSession | None:
+        stmt = (
+            select(MovieSession)
+            .where(MovieSession.room_id == room_id)
+            .order_by(MovieSession.created_at.desc())
+        )
+        return await self.session.scalar(stmt)
+
+    async def latest_for_rooms(self, room_ids: list[UUID]) -> dict[UUID, MovieSession]:
+        if not room_ids:
+            return {}
+        stmt = (
+            select(MovieSession)
+            .where(MovieSession.room_id.in_(room_ids))
+            .order_by(MovieSession.created_at.desc())
+        )
+        sessions = list(await self.session.scalars(stmt))
+        latest: dict[UUID, MovieSession] = {}
+        for movie_session in sessions:
+            latest.setdefault(movie_session.room_id, movie_session)
+        return latest
 
     async def create_vote(
         self,
@@ -56,10 +80,14 @@ class SessionRepository:
         return await self.session.scalar(stmt)
 
     async def voted_movie_ids(self, *, session_id: UUID, user_id: UUID) -> set[UUID]:
-        stmt = select(Vote.movie_id).where(
-            Vote.session_id == session_id,
-            Vote.user_id == user_id,
-        ).distinct()
+        stmt = (
+            select(Vote.movie_id)
+            .where(
+                Vote.session_id == session_id,
+                Vote.user_id == user_id,
+            )
+            .distinct()
+        )
         return set(await self.session.scalars(stmt))
 
     async def count_likes(
@@ -69,11 +97,15 @@ class SessionRepository:
         movie_id: UUID,
         user_ids: list[UUID],
     ) -> int:
-        stmt = select(func.count()).select_from(Vote).where(
-            Vote.session_id == session_id,
-            Vote.movie_id == movie_id,
-            Vote.user_id.in_(user_ids),
-            Vote.value == VoteValue.LIKE,
+        stmt = (
+            select(func.count())
+            .select_from(Vote)
+            .where(
+                Vote.session_id == session_id,
+                Vote.movie_id == movie_id,
+                Vote.user_id.in_(user_ids),
+                Vote.value == VoteValue.LIKE,
+            )
         )
         return int(await self.session.scalar(stmt) or 0)
 
@@ -84,14 +116,21 @@ class SessionRepository:
         )
         return await self.session.scalar(stmt)
 
-
     async def list_matches(self, *, session_id: UUID) -> list[Match]:
-        stmt = (
-            select(Match)
-            .where(Match.session_id == session_id)
-            .order_by(Match.created_at.asc())
-        )
+        stmt = select(Match).where(Match.session_id == session_id).order_by(Match.created_at.asc())
         return list(await self.session.scalars(stmt))
+
+    async def matches_for_sessions(self, session_ids: list[UUID]) -> dict[UUID, list[Match]]:
+        if not session_ids:
+            return {}
+        stmt = (
+            select(Match).where(Match.session_id.in_(session_ids)).order_by(Match.created_at.asc())
+        )
+        matches = list(await self.session.scalars(stmt))
+        grouped: dict[UUID, list[Match]] = {}
+        for match in matches:
+            grouped.setdefault(match.session_id, []).append(match)
+        return grouped
 
     async def create_match(self, *, session_id: UUID, movie_id: UUID) -> Match:
         match = Match(session_id=session_id, movie_id=movie_id)

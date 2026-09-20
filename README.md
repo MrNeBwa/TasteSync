@@ -1,5 +1,15 @@
 # TasteSync v1.7
 
+## Features
+
+- Shared room voting with realtime lobby (WebSocket) and LIKE / DISLIKE / SKIP movie sessions.
+- Join rooms by 6-char code, by shareable invite link, or by scanning a QR code (web lobby renders it, mobile scans it).
+- Room & match history on the web dashboard and mobile profile.
+- Age/content gate with 18+ filtering; account settings incl. password change.
+- Dark mode / light mode toggle on both web and mobile (persisted).
+- Web session keyboard shortcuts: `1` DISLIKE, `2` SKIP, `3` LIKE.
+- Content policy: matched movies respect both age of the participants and 18+ flag.
+
 ## Development networking
 
 The web app uses a same-origin Vite proxy. Open the UI from any reachable interface/IP:

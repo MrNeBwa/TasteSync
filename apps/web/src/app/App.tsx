@@ -1,4 +1,5 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
+import QRCode from 'qrcode';
 import { apiFetch as request } from '../shared/api/client';
 import { getRuntimeWsBaseUrl } from '../shared/api/config';
 import { clearTokens, getAccessToken, saveTokens } from '../shared/lib/storage';
@@ -63,9 +64,11 @@ function App() {
   useEffect(() => {
     if (!room || !token || !['room', 'session', 'match'].includes(screen)) return;
     const wsBase = getRuntimeWsBaseUrl();
+    let closed = false;
     const ws = new WebSocket(`${wsBase}/ws/rooms/${room.id}?token=${encodeURIComponent(token)}`);
     ws.onmessage = (event) => {
       try {
+        if (closed) return;
         const msg = JSON.parse(event.data) as { type: string; payload?: unknown };
         if (msg.type === 'ROOM_READY_CHANGED' && msg.payload && typeof msg.payload === 'object') setRoom(msg.payload as Room);
         if (msg.type === 'ROOM_TASK_CHANGED' && msg.payload && typeof msg.payload === 'object') setRoom(msg.payload as Room);
@@ -99,9 +102,15 @@ function App() {
         // Ignore malformed realtime messages.
       }
     };
-    ws.onerror = () => setError('Realtime-соединение с комнатой недоступно.');
-    return () => ws.close();
+    ws.onerror = () => { if (!closed) setError('Realtime-соединение с комнатой недоступно.'); };
+    return () => { closed = true; ws.close(); };
   }, [room, token, screen]);
+
+  useEffect(() => {
+    if (!room || !token) return;
+    setError('');
+    return () => setError('');
+  }, [room?.id, token]);
 
   const saveBirthDate = async (birthDate: string) => {
     if (!birthDate) return;
@@ -216,7 +225,7 @@ function Auth({ mode, onModeChange, onBack, onSubmit, error }: { mode: AuthMode;
   </Shell>;
 }
 
-function Home({ user, token, onOpenSettings, onRoom, onError, error }: { user: User | null; token: string; onOpenSettings: () => void; onRoom: (r: Room) => void; onError: (e: string) => void; error: string }) {
+function Home({ user, token, theme, onToggleTheme, onOpenSettings, onRoom, onError, error }: { user: User | null; token: string; theme: Theme; onToggleTheme: () => void; onOpenSettings: () => void; onRoom: (r: Room) => void; onError: (e: string) => void; error: string }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [joinOpen, setJoinOpen] = useState(false);
   const [name, setName] = useState('Movie Night');
@@ -243,13 +252,25 @@ function Home({ user, token, onOpenSettings, onRoom, onError, error }: { user: U
       onError(e instanceof Error ? e.message : 'Комната не найдена');
     } finally { setLoading(false); }
   };
-  return <Shell eyebrow="YOUR DASHBOARD" title={<>Выбираем <span>вместе.</span></>} subtitle={`${user?.username ?? 'Пользователь'}, создайте новую комнату или присоединитесь к друзьям.`} actions={<button className="avatar-button" onClick={onOpenSettings}>{(user?.username ?? 'U').slice(0, 1).toUpperCase()}</button>}>
+  useEffect(() => {
+    let active = true;
+    request<{ items: HistoryItem[] }>('/me/history?limit=6', {}, token)
+      .then((data) => { if (active) setHistory(data.items); })
+      .catch(() => undefined)
+      .finally(() => active && setHistoryLoading(false));
+    return () => { active = false; };
+  }, [token]);
+  return <Shell eyebrow="YOUR DASHBOARD" title={<>Выбираем <span>вместе.</span></>} subtitle={`${user?.username ?? 'Пользователь'}, создайте новую комнату или присоединитесь к друзьям.`} actions={<><button className="theme-toggle" onClick={onToggleTheme} aria-label="Переключить тему" title="Тема">{theme === 'light' ? '☾' : '☀'}</button><button className="avatar-button" onClick={onOpenSettings}>{(user?.username ?? 'U').slice(0, 1).toUpperCase()}</button></>}>
     <div className="dashboard-grid">
       <button className="big-action dark" onClick={() => setCreateOpen(true)}><span className="action-number">01</span><span className="action-icon">＋</span><strong>Создать комнату</strong><small>Начните новый movie night</small><em>→</em></button>
       <button className="big-action yellow" onClick={() => setJoinOpen(true)}><span className="action-number">02</span><span className="action-icon">⌂</span><strong>Войти в комнату</strong><small>У вас уже есть код?</small><em>→</em></button>
     </div>
     <div className="dashboard-note"><div><span className="eyebrow">СЕЙЧАС</span><h3>Никакого doom-scrolling.</h3></div><p>Каждый новый batch — смесь любимых жанров и случайного exploration. Ваша вкусовая модель растёт на ходу.</p></div>
     {error && <div className="form-error dashboard-error">{error}</div>}
+    <div className="history-section">
+      <div className="history-head"><span className="eyebrow">ИСТОРИЯ КОМНАТ</span><h2>Что вы уже смотрели.</h2></div>
+      {historyLoading ? <div className="loading-card history-loading">Загружаем историю…</div> : history.length === 0 ? <div className="empty-card history-empty"><span className="eyebrow">ПОКА ПУСТО</span><strong>Завершите первую сессию — matched-фильмы появятся здесь.</strong></div> : <div className="history-grid">{history.map(item => <div className="history-card" key={item.room_id}><div className="history-card-top"><strong>{item.room_name}</strong><span className="code-pill small">{item.room_code}</span></div><div className="history-card-meta"><span>{new Date(item.created_at).toLocaleDateString('ru-RU')}</span><span>{item.member_count} чел.</span><span>{item.matched_movies.length > 0 ? `${item.matched_movies.length} match` : item.room_status.toLowerCase()}</span></div>{item.matched_movies.length > 0 && <div className="history-posters">{item.matched_movies.slice(0, 3).map(movie => <div className="history-poster" key={movie.id} title={movie.title} style={{ backgroundImage: movie.poster_url ? `url(${movie.poster_url})` : 'none' }}><span>{!movie.poster_url ? movie.title : ''}</span></div>)}</div>}</div>)}</div>}
+    </div>
     {createOpen && <Modal title="Новая комната" onClose={() => setCreateOpen(false)}><label>Название<input autoFocus value={name} onChange={e => setName(e.target.value)} /></label><button disabled={loading || !name.trim()} className="btn btn-primary wide" onClick={create}>{loading ? 'Создаём…' : 'Создать комнату →'}</button></Modal>}
     {joinOpen && <Modal title="Войти по коду" onClose={() => setJoinOpen(false)}><label>Код комнаты<input autoFocus value={code} onChange={e => setCode(e.target.value.toUpperCase())} maxLength={8} placeholder="K7P2QA" /></label><button disabled={loading || code.length < 4} className="btn btn-primary wide" onClick={join}>{loading ? 'Входим…' : 'Войти →'}</button></Modal>}
   </Shell>;
@@ -490,22 +511,23 @@ function SearchSession({ token, session, room, onMatch, onFinish, location, onLo
     extractPalette(movie.poster_url).then(setPalette).catch(() => setPalette(FALLBACK_PALETTE));
   }, [movie?.poster_url]);
 
-  const pageStyle = mode === 'movies'
-    ? {
-        '--poster-primary': palette.primary,
-        '--poster-secondary': palette.secondary,
-        '--poster-glow': palette.glow,
-        '--poster-ink': palette.ink,
-      }
-    : {
-        '--poster-primary': mode === 'restaurants' ? '#efbd42' : '#f06aa7',
-        '--poster-secondary': mode === 'restaurants' ? '#f06aa7' : '#efbd42',
-        '--poster-glow': mode === 'restaurants' ? 'rgba(239,189,66,.3)' : 'rgba(240,106,167,.3)',
-        '--poster-ink': '#121212',
-      };
-  const pageStyleVar = pageStyle as React.CSSProperties;
-  const swatchPrimary = mode === 'movies' ? palette.primary : pageStyle['--poster-primary'];
-  const swatchSecondary = mode === 'movies' ? palette.secondary : pageStyle['--poster-secondary'];
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.key === '1') vote('DISLIKE');
+      else if (event.key === '2') vote('SKIP');
+      else if (event.key === '3') vote('LIKE');
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [movie, busy, index, movies.length]);
+
+  const style = {
+    '--poster-primary': palette.primary,
+    '--poster-secondary': palette.secondary,
+    '--poster-glow': palette.glow,
+    '--poster-ink': palette.ink,
+  } as React.CSSProperties;
 
   const vote = async (value: VoteValue) => {
     if (!item || busy) return;
@@ -619,16 +641,49 @@ function MatchScreen({ result, onBack }: { result: MatchResult | null; onBack: (
   </div>;
 }
 
-function Settings({ user, onBack, onLogout, onEditAge }: { user: User | null; onBack: () => void; onLogout: () => void; onEditAge: () => void }) {
+function Settings({ user, theme, onToggleTheme, token, onBack, onLogout, onEditAge }: { user: User | null; theme: Theme; onToggleTheme: () => void; token: string; onBack: () => void; onLogout: () => void; onEditAge: () => void }) {
   const age = user?.birth_date ? calculateAge(user.birth_date) : null;
+  const [passwordOpen, setPasswordOpen] = useState(false);
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordDone, setPasswordDone] = useState(false);
   return <Shell eyebrow="ACCOUNT" title={<>Ваш <span>профиль.</span></>} subtitle="Возраст определяет, можно ли показывать вам контент 18+. Настройка сохраняется в аккаунте." actions={<button className="nav-link" onClick={onBack}>← назад</button>}>
     <div className="profile-card"><div className="profile-avatar large">{(user?.username ?? 'U').slice(0, 1).toUpperCase()}</div><div><span className="eyebrow">USERNAME</span><h2>{user?.username}</h2><p>{user?.email}</p></div></div>
     <div className="settings-grid">
       <button className="settings-row" onClick={onEditAge}>Возраст и цензура <span>{age === null ? 'указать →' : `${age} лет →`}</span></button>
-      <button className="settings-row">Сменить пароль <span>→</span></button>
+      <button className="settings-row" onClick={() => { setPasswordDone(false); setPasswordError(''); setPasswordOpen(true); }}>Сменить пароль <span>→</span></button>
+      <button className="settings-row" onClick={onToggleTheme}>Тема оформления <span>{theme === 'light' ? 'светлая · переключить' : 'тёмная · переключить'}</span></button>
       <button className="settings-row danger" onClick={onLogout}>Выйти из аккаунта <span>→</span></button>
     </div>
+    {passwordOpen && <PasswordModal token={token} onClose={() => setPasswordOpen(false)} onError={setPasswordError} onSuccess={() => { setPasswordDone(true); setPasswordOpen(false); }} />}
+    {(passwordError || passwordDone) && <div className={`age-result ${passwordDone ? 'adult' : ''}`}>{passwordDone ? 'Пароль обновлён ✓' : passwordError}</div>}
   </Shell>;
+}
+
+function PasswordModal({ token, onClose, onError, onSuccess }: { token: string; onClose: () => void; onError: (message: string) => void; onSuccess: () => void }) {
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [busy, setBusy] = useState(false);
+  const submit = async () => {
+    onError('');
+    if (next.length < 8) { onError('Новый пароль должен быть не короче 8 символов.'); return; }
+    if (next !== confirm) { onError('Новые пароли не совпадают.'); return; }
+    setBusy(true);
+    try {
+      await request('/users/me/password', { method: 'PATCH', body: JSON.stringify({ current_password: current, new_password: next }) }, token);
+      setBusy(false);
+      onSuccess();
+    } catch (e) {
+      onError(e instanceof Error ? e.message : 'Не удалось сменить пароль');
+      setBusy(false);
+    }
+  };
+  return <Modal title="Смена пароля" onClose={onClose}>
+    <label>Текущий пароль<input type="password" value={current} onChange={e => setCurrent(e.target.value)} autoFocus /></label>
+    <label>Новый пароль<input type="password" value={next} onChange={e => setNext(e.target.value)} minLength={8} placeholder="минимум 8 символов" /></label>
+    <label>Повторите новый пароль<input type="password" value={confirm} onChange={e => setConfirm(e.target.value)} /></label>
+    <button className="btn btn-primary wide" disabled={busy || !current || !next || next !== confirm} onClick={submit}>{busy ? 'Сохраняем…' : 'Сменить пароль →'}</button>
+  </Modal>;
 }
 
 function AgeGate({ user, saving, required, onSave, onClose }: { user: User | null; saving: boolean; required: boolean; onSave: (birthDate: string) => void; onClose: () => void }) {

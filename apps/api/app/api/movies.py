@@ -8,7 +8,7 @@ from app.core.dependencies import get_current_user
 from app.db.session import get_db_session
 from app.models.movie import Movie
 from app.models.user import User
-from app.modules.movies.schemas import GenreResponse, MovieResponse
+from app.modules.movies.schemas import MovieResponse, to_movie_response
 from app.modules.movies.service import MovieService
 from app.providers.tmdb import TMDBProvider
 from app.repositories.movie_repository import MovieRepository
@@ -17,20 +17,7 @@ router = APIRouter(prefix="/movies", tags=["movies"])
 
 
 def _to_response(movie: Movie) -> MovieResponse:
-    return MovieResponse(
-        id=movie.id,
-        title=movie.title,
-        overview=movie.overview,
-        release_date=movie.release_date,
-        poster_url=movie.poster_url,
-        backdrop_url=movie.backdrop_url,
-        popularity=movie.popularity,
-        vote_average=movie.vote_average,
-        vote_count=movie.vote_count,
-        is_adult=movie.is_adult,
-        trailer_url=movie.primary_trailer_url,
-        genres=[GenreResponse(id=mg.genre.id, name=mg.genre.name) for mg in movie.genres],
-    )
+    return to_movie_response(movie)
 
 
 @router.get("", response_model=list[MovieResponse])
@@ -42,7 +29,14 @@ async def list_movies(
     adult_allowed = current_user.birth_date is not None
     if current_user.birth_date is not None:
         today = date.today()
-        age = today.year - current_user.birth_date.year - ((today.month, today.day) < (current_user.birth_date.month, current_user.birth_date.day))
+        age = (
+            today.year
+            - current_user.birth_date.year
+            - (
+                (today.month, today.day)
+                < (current_user.birth_date.month, current_user.birth_date.day)
+            )
+        )
         adult_allowed = age >= 18
     movies = await MovieRepository(session).list_popular(limit=limit, include_adult=adult_allowed)
     return [_to_response(movie) for movie in movies]
@@ -63,6 +57,7 @@ async def get_movie(
 @router.post("/sync-popular")
 async def sync_popular(
     pages: int = Query(default=3, ge=1, le=20),
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> dict[str, int]:
     provider = TMDBProvider()

@@ -32,7 +32,9 @@ class RoomRepository:
             stmt = stmt.with_for_update()
         return await self.session.scalar(stmt)
 
-    async def get_by_code(self, code: str, *, with_members: bool = False, for_update: bool = False) -> Room | None:
+    async def get_by_code(
+        self, code: str, *, with_members: bool = False, for_update: bool = False
+    ) -> Room | None:
         stmt = select(Room).where(Room.code == code)
         if with_members:
             stmt = stmt.options(selectinload(Room.members).selectinload(RoomMember.user))
@@ -61,7 +63,9 @@ class RoomRepository:
         )
         return list(await self.session.scalars(stmt))
 
-    async def add_member(self, *, room: Room, user: User, role: RoomMemberRole = RoomMemberRole.MEMBER) -> RoomMember:
+    async def add_member(
+        self, *, room: Room, user: User, role: RoomMemberRole = RoomMemberRole.MEMBER
+    ) -> RoomMember:
         membership = RoomMember(room_id=room.id, user_id=user.id, role=role)
         self.session.add(membership)
         return membership
@@ -69,7 +73,18 @@ class RoomRepository:
     async def remove_member(self, membership: RoomMember) -> None:
         await self.session.delete(membership)
 
-    async def create_room(self, *, name: str, owner: User, task: RoomTask = RoomTask.MOVIES) -> Room:
+    async def list_for_user(self, *, user_id: UUID, limit: int = 20) -> list[Room]:
+        stmt = (
+            select(Room)
+            .join(RoomMember, RoomMember.room_id == Room.id)
+            .where(RoomMember.user_id == user_id)
+            .options(selectinload(Room.members).selectinload(RoomMember.user))
+            .order_by(Room.created_at.desc())
+            .limit(limit)
+        )
+        return list(await self.session.scalars(stmt))
+
+    async def create_room(self, *, name: str, owner: User) -> Room:
         alphabet = ascii_uppercase + digits
         for _ in range(10):
             code = "".join(choice(alphabet) for _ in range(6))

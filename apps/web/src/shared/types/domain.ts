@@ -112,3 +112,13 @@ export type Palette = {
   glow: string;
   ink: string;
 };
+
+export type HistoryItem = {
+  room_id: string;
+  room_name: string;
+  room_code: string;
+  room_status: string;
+  created_at: string;
+  member_count: number;
+  matched_movies: Movie[];
+};
