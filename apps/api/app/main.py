@@ -16,7 +16,27 @@ from app.api.sessions import router as sessions_router
 from app.api.history import router as history_router
 from app.core.config import get_settings
 from app.core.cors import get_cors_config
-from app.db.session import close_db
+from app.db.session import AsyncSessionLocal, close_db
+from app.models.movie import Movie
+from app.modules.movies.service import MovieService
+from app.providers.tmdb import TMDBProvider
+from app.repositories.movie_repository import MovieRepository
+
+
+async def seed_catalog_if_empty() -> None:
+    try:
+        async with AsyncSessionLocal() as session:
+            count = await session.scalar(select(func.count()).select_from(Movie))
+            if count:
+                return
+            provider = TMDBProvider()
+            try:
+                await MovieService(MovieRepository(session), provider).sync_popular(pages=2)
+            finally:
+                await provider.close()
+            await session.commit()
+    except Exception:
+        pass
 
 
 @asynccontextmanager
@@ -38,7 +58,10 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    # Health endpoint served at both /health (root, for healthchecks/probes)
+    # and /api/health (the rest of the API surface lives under /api).
     application.include_router(health_router, prefix="/api")
+    application.include_router(health_router)
     application.include_router(auth_router, prefix="/api")
     application.include_router(rooms_router, prefix="/api")
     application.include_router(users_router, prefix="/api")

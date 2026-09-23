@@ -5,7 +5,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import delete, text
 
-from app.db.session import AsyncSessionLocal
+from app.db.session import AsyncSessionLocal, close_db
 from app.main import app
 from app.models.room import Room, RoomStatus, RoomTask
 from app.models.user import User
@@ -21,6 +21,8 @@ def _db_available() -> bool:
             return True
         except Exception:
             return False
+        finally:
+            await close_db()
 
     return asyncio.run(probe())
 
@@ -74,6 +76,7 @@ def test_update_task_persists_and_resets_ready() -> None:
                 await session.execute(delete(Room).where(Room.id == room_id))
                 await session.execute(delete(User).where(User.id == owner_id))
                 await session.commit()
+            await close_db()
 
     asyncio.run(run())
 
@@ -106,6 +109,7 @@ def test_update_task_rejects_non_owner() -> None:
                 await session.execute(delete(User).where(User.id == owner_id))
                 await session.execute(delete(User).where(User.id == guest_id))
                 await session.commit()
+            await close_db()
 
     asyncio.run(run())
 
@@ -120,5 +124,6 @@ def test_update_task_unknown_room() -> None:
                     user_id=uuid4(),
                     task=RoomTask.MOVIES,
                 )
+            await close_db()
 
     asyncio.run(run())

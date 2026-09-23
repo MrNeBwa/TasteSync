@@ -18,7 +18,7 @@ uv run uvicorn app.main:app --reload
 ```
 
 API docs: http://127.0.0.1:8000/docs
-Health: http://127.0.0.1:8000/api/health
+Health: http://127.0.0.1:8000/health (also available at `/api/health`)
 
 ## Current API
 

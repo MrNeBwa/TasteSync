@@ -42,4 +42,4 @@ pnpm install
 pnpm dev:web
 ```
 
-The API seeds the movie catalog from TMDB automatically on startup when the `movies` table is empty. `/api/health` reports DB/Redis connectivity.
+The API seeds the movie catalog from TMDB automatically on startup when the `movies` table is empty. `/health` (also available at `/api/health`) reports DB/Redis connectivity.

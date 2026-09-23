@@ -1,5 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
-import QRCode from 'qrcode';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { apiFetch as request } from '../shared/api/client';
 import { getRuntimeWsBaseUrl } from '../shared/api/config';
 import { clearTokens, getAccessToken, saveTokens } from '../shared/lib/storage';
@@ -10,7 +9,7 @@ import { roomsApi } from '../features/rooms/api';
 import { ModeCircle, MODE_OPTIONS } from '../components/ModeCircle';
 import { PlaceCard } from '../components/PlaceCard';
 import { PlaceCategoryIcon, SearchModeIcon } from '../components/icons';
-import type { AuthMode, Coords, Genre, MatchResult, Movie, Palette, Place, Room, RoomMember, Screen, SearchMode, Session, User, UserLocation, VoteValue } from '../shared/types/domain';
+import type { AuthMode, Coords, Genre, HistoryItem, MatchResult, Movie, Palette, Place, Room, RoomMember, Screen, SearchMode, Session, User, UserLocation, VoteValue } from '../shared/types/domain';
 
 const FALLBACK_PALETTE: Palette = {
   primary: '#efbd42',
@@ -179,7 +178,7 @@ function App() {
       {authenticated && screen === 'room' && room && <RoomLobby user={user} token={token} room={room} onBack={() => setScreen('home')} onRoomChange={setRoom} onStarted={(s) => { setSession(s); setScreen('session'); }} onError={setError} location={location} onLocation={setLocation} />}
       {authenticated && screen === 'session' && session && room && <SearchSession token={token} session={session} room={room} onMatch={(result) => { setMatchResult(result); setScreen('match'); }} onFinish={() => { setScreen('home'); setSession(null); }} location={location} onLocation={setLocation} />}
       {authenticated && screen === 'match' && room && <MatchScreen result={matchResult} onBack={() => setScreen('home')} />}
-      {authenticated && screen === 'settings' && <Settings user={user} onBack={() => setScreen('home')} onLogout={logout} onEditAge={() => setAgeGateOpen(true)} />}
+      {authenticated && screen === 'settings' && <Settings user={user} token={token} onBack={() => setScreen('home')} onLogout={logout} onEditAge={() => setAgeGateOpen(true)} />}
       {error && screen === 'home' && <div className="toast" role="alert">{error}<button onClick={() => setError('')}>×</button></div>}
       {authenticated && ageGateOpen && <AgeGate user={user} saving={ageSaving} required={!user?.birth_date} onSave={saveBirthDate} onClose={() => !user?.birth_date ? undefined : setAgeGateOpen(false)} />}
     </div>
@@ -225,12 +224,14 @@ function Auth({ mode, onModeChange, onBack, onSubmit, error }: { mode: AuthMode;
   </Shell>;
 }
 
-function Home({ user, token, theme, onToggleTheme, onOpenSettings, onRoom, onError, error }: { user: User | null; token: string; theme: Theme; onToggleTheme: () => void; onOpenSettings: () => void; onRoom: (r: Room) => void; onError: (e: string) => void; error: string }) {
+function Home({ user, token, onOpenSettings, onRoom, onError, error }: { user: User | null; token: string; onOpenSettings: () => void; onRoom: (r: Room) => void; onError: (e: string) => void; error: string }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [joinOpen, setJoinOpen] = useState(false);
   const [name, setName] = useState('Movie Night');
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
   const create = async () => {
     setLoading(true);
     try {
@@ -260,7 +261,7 @@ function Home({ user, token, theme, onToggleTheme, onOpenSettings, onRoom, onErr
       .finally(() => active && setHistoryLoading(false));
     return () => { active = false; };
   }, [token]);
-  return <Shell eyebrow="YOUR DASHBOARD" title={<>Выбираем <span>вместе.</span></>} subtitle={`${user?.username ?? 'Пользователь'}, создайте новую комнату или присоединитесь к друзьям.`} actions={<><button className="theme-toggle" onClick={onToggleTheme} aria-label="Переключить тему" title="Тема">{theme === 'light' ? '☾' : '☀'}</button><button className="avatar-button" onClick={onOpenSettings}>{(user?.username ?? 'U').slice(0, 1).toUpperCase()}</button></>}>
+  return <Shell eyebrow="YOUR DASHBOARD" title={<>Выбираем <span>вместе.</span></>} subtitle={`${user?.username ?? 'Пользователь'}, создайте новую комнату или присоединитесь к друзьям.`} actions={<button className="avatar-button" onClick={onOpenSettings}>{(user?.username ?? 'U').slice(0, 1).toUpperCase()}</button>}>
     <div className="dashboard-grid">
       <button className="big-action dark" onClick={() => setCreateOpen(true)}><span className="action-number">01</span><span className="action-icon">＋</span><strong>Создать комнату</strong><small>Начните новый movie night</small><em>→</em></button>
       <button className="big-action yellow" onClick={() => setJoinOpen(true)}><span className="action-number">02</span><span className="action-icon">⌂</span><strong>Войти в комнату</strong><small>У вас уже есть код?</small><em>→</em></button>
@@ -522,12 +523,22 @@ function SearchSession({ token, session, room, onMatch, onFinish, location, onLo
     return () => window.removeEventListener('keydown', onKey);
   }, [movie, busy, index, movies.length]);
 
-  const style = {
-    '--poster-primary': palette.primary,
-    '--poster-secondary': palette.secondary,
-    '--poster-glow': palette.glow,
-    '--poster-ink': palette.ink,
-  } as React.CSSProperties;
+  const pageStyle = mode === 'movies'
+    ? {
+        '--poster-primary': palette.primary,
+        '--poster-secondary': palette.secondary,
+        '--poster-glow': palette.glow,
+        '--poster-ink': palette.ink,
+      }
+    : {
+        '--poster-primary': mode === 'restaurants' ? '#efbd42' : '#f06aa7',
+        '--poster-secondary': mode === 'restaurants' ? '#f06aa7' : '#efbd42',
+        '--poster-glow': mode === 'restaurants' ? 'rgba(239,189,66,.3)' : 'rgba(240,106,167,.3)',
+        '--poster-ink': '#121212',
+      };
+  const pageStyleVar = pageStyle as React.CSSProperties;
+  const swatchPrimary = mode === 'movies' ? palette.primary : pageStyle['--poster-primary'];
+  const swatchSecondary = mode === 'movies' ? palette.secondary : pageStyle['--poster-secondary'];
 
   const vote = async (value: VoteValue) => {
     if (!item || busy) return;
@@ -641,7 +652,7 @@ function MatchScreen({ result, onBack }: { result: MatchResult | null; onBack: (
   </div>;
 }
 
-function Settings({ user, theme, onToggleTheme, token, onBack, onLogout, onEditAge }: { user: User | null; theme: Theme; onToggleTheme: () => void; token: string; onBack: () => void; onLogout: () => void; onEditAge: () => void }) {
+function Settings({ user, token, onBack, onLogout, onEditAge }: { user: User | null; token: string; onBack: () => void; onLogout: () => void; onEditAge: () => void }) {
   const age = user?.birth_date ? calculateAge(user.birth_date) : null;
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [passwordError, setPasswordError] = useState('');
@@ -651,7 +662,6 @@ function Settings({ user, theme, onToggleTheme, token, onBack, onLogout, onEditA
     <div className="settings-grid">
       <button className="settings-row" onClick={onEditAge}>Возраст и цензура <span>{age === null ? 'указать →' : `${age} лет →`}</span></button>
       <button className="settings-row" onClick={() => { setPasswordDone(false); setPasswordError(''); setPasswordOpen(true); }}>Сменить пароль <span>→</span></button>
-      <button className="settings-row" onClick={onToggleTheme}>Тема оформления <span>{theme === 'light' ? 'светлая · переключить' : 'тёмная · переключить'}</span></button>
       <button className="settings-row danger" onClick={onLogout}>Выйти из аккаунта <span>→</span></button>
     </div>
     {passwordOpen && <PasswordModal token={token} onClose={() => setPasswordOpen(false)} onError={setPasswordError} onSuccess={() => { setPasswordDone(true); setPasswordOpen(false); }} />}

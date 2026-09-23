@@ -4,7 +4,7 @@ from uuid import UUID, uuid4
 import pytest
 from sqlalchemy import delete, text
 
-from app.db.session import AsyncSessionLocal
+from app.db.session import AsyncSessionLocal, close_db
 from app.main import app
 from app.models.place import Place, PlaceCategory
 from app.models.vote import VoteValue
@@ -21,6 +21,8 @@ def _db_available() -> bool:
             return True
         except Exception:
             return False
+        finally:
+            await close_db()
 
     return asyncio.run(probe())
 
@@ -180,5 +182,6 @@ def test_upsert_place_persists_not_null_fields() -> None:
                 await session.rollback()
                 await session.execute(delete(Place).where(Place.provider_id == provider_id))
                 await session.commit()
+            await close_db()
 
     asyncio.run(run())

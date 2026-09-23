@@ -84,7 +84,9 @@ class RoomRepository:
         )
         return list(await self.session.scalars(stmt))
 
-    async def create_room(self, *, name: str, owner: User) -> Room:
+    async def create_room(
+        self, *, name: str, owner: User, task: RoomTask = RoomTask.MOVIES
+    ) -> Room:
         alphabet = ascii_uppercase + digits
         for _ in range(10):
             code = "".join(choice(alphabet) for _ in range(6))
