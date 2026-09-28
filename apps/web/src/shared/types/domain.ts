@@ -20,6 +20,12 @@ export type Place = {
   website: string | null;
   phone: string | null;
   opening_hours: string | null;
+  /**
+   * Server-generated cover art, always present. `image_url` is a real
+   * OpenStreetMap photo and is null for most places, so clients that want a
+   * picture should fall back to this rather than to a placeholder.
+   */
+  cover_url: string;
 };
 
 export type VotePayload = {

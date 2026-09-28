@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import hashlib
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user
 from app.db.session import get_db_session
-from app.models.place import PlaceCategory
+from app.models.place import Place, PlaceCategory
 from app.models.user import User
+from app.modules.places.cover import place_cover_svg
 from app.modules.places.schemas import PlaceResponse
 from app.modules.places.service import PlaceNotFoundError, PlaceService
 from app.modules.sessions.service import (
@@ -43,7 +46,35 @@ def place_response(place) -> PlaceResponse:
         website=place.website,
         phone=place.phone,
         opening_hours=place.opening_hours,
+        cover_url=f"/api/places/{place.id}/cover.svg",
     )
+
+
+@router.get("/places/{place_id}/cover.svg", include_in_schema=False)
+async def place_cover(
+    place_id: UUID,
+    request: Request,
+    session: AsyncSession = Depends(get_db_session),
+) -> Response:
+    """Generated cover art for a place.
+
+    Deliberately unauthenticated: it is loaded as a plain ``<img>`` source by the
+    web client, which cannot attach a bearer token, and the artwork is derived
+    only from the place id and name.
+
+    The artwork is pure, so it is hashed into an ETag and revalidated by hand --
+    Starlette does not do conditional handling for a plain Response, so without
+    this every cached visit would re-download the file.
+    """
+    name = await session.scalar(select(Place.name).where(Place.id == place_id))
+    if name is None:
+        raise HTTPException(status_code=404, detail="Place not found")
+    body = place_cover_svg(str(place_id), name)
+    etag = f'"{hashlib.sha256(body.encode()).hexdigest()[:32]}"'
+    headers = {"Cache-Control": "public, max-age=86400, immutable", "ETag": etag}
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=headers)
+    return Response(content=body, media_type="image/svg+xml", headers=headers)
 
 
 @router.get("/places/{place_id}", response_model=PlaceResponse)

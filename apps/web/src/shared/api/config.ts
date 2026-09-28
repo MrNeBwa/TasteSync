@@ -84,3 +84,34 @@ export function getWsBaseUrl(): string {
 
 export const getRuntimeApiBaseUrl = getApiBaseUrl;
 export const getRuntimeWsBaseUrl = getWsBaseUrl;
+
+/**
+ * Join a server-supplied asset path onto an API base.
+ *
+ * The API base already ends in `/api`, while paths it hands out are absolute
+ * from the origin (`/api/places/{id}/cover.svg`). Joining those naively
+ * produces `/api/api/...`, which 404s. The path's own `/api` segment is dropped
+ * before the join, and a path that is already absolute is left alone.
+ */
+export function joinApiAssetPath(
+  base: string,
+  path: string | null | undefined,
+): string | null {
+  if (!path) return null;
+  if (/^(https?:)?\/\//.test(path)) return path;
+  // Anchored on a full segment so a path like "apifoo/x" is left intact.
+  const relative = path
+    .replace(/^\/+/, "")
+    .replace(/^api$/, "")
+    .replace(/^api\//, "");
+  return `${stripTrailingSlash(base)}/${relative}`;
+}
+
+/**
+ * Turn a server-supplied path (e.g. a place cover) into a URL an `<img>` or CSS
+ * `background-image` can load. These cannot go through `apiFetch`, because
+ * neither can attach a bearer token.
+ */
+export function resolveApiAssetUrl(path: string | null | undefined): string | null {
+  return joinApiAssetPath(getRuntimeApiBaseUrl(), path);
+}

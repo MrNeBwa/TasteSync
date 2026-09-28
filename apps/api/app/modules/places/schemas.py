@@ -26,6 +26,10 @@ class PlaceResponse(BaseModel):
     website: str | None
     phone: str | None
     opening_hours: str | None
+    # Always set. `image_url` is a real OpenStreetMap photo when one exists and
+    # is usually None, so the client must not treat it as the only picture
+    # source or most places render with nothing to show.
+    cover_url: str
 
 
 class PlaceMatchResponse(BaseModel):

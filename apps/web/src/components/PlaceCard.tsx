@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { PlaceCategoryIcon } from './icons';
+import { resolveApiAssetUrl } from '../shared/api/config';
 import type { Place, VoteValue } from '../shared/types/domain';
 
 const ACCENTS: Record<string, React.CSSProperties> = {
@@ -16,11 +18,19 @@ export function PlaceCard({ place, busy, onVote }: { place: Place; busy: boolean
   const kind = place.category === 'RESTAURANT' ? 'RESTAURANT' : 'ENTERTAINMENT';
   const meta = [place.rating ? `★ ${place.rating.toFixed(1)}` : null, place.price_level, place.city].filter(Boolean).join(' · ');
   const tags = place.tags.length > 0 ? place.tags : (place.cuisine ?? '').split(';').map(s => s.trim()).filter(Boolean).slice(0, 4);
+  // A real OpenStreetMap photo when the tag exists, generated artwork
+  // otherwise. Only if that 404s does the icon standin appear.
+  const [photoFailed, setPhotoFailed] = useState(false);
+  const photo = photoFailed ? null : resolveApiAssetUrl(place.image_url) ?? resolveApiAssetUrl(place.cover_url);
 
   return <div className="movie-stage-enhanced place-stage" style={accent}>
     <section className="place-visual-card">
       <div className="place-visual-stage">
-        {place.image_url ? <div className="place-photo" style={{ backgroundImage: `url(${place.image_url})` }} /> : <div className="place-standin"><div className="icon-scaffold"><PlaceCategoryIcon category={place.category} size={60} /></div><span className="place-standin-label">{kind}</span></div>}
+        {photo
+          // A real <img>, not a background-image div: only an <img> fires the
+          // error event that lets a broken cover fall back to the standin.
+          ? <img className="place-photo" src={photo} onError={() => setPhotoFailed(true)} alt="" />
+          : <div className="place-standin"><div className="icon-scaffold"><PlaceCategoryIcon category={place.category} size={60} /></div><span className="place-standin-label">{kind}</span></div>}
         <div className="place-caption"><span className="eyebrow">{kind} · {place.city ?? 'рядом с вами'}</span><h3>{place.name}</h3>{tags.length > 0 && <div className="place-subtags">{tags.slice(0, 4).map(tag => <span className="tag-dark" key={tag}>{tag}</span>)}</div>}</div>
       </div>
       <div className="movie-votes"><button className="vote no" disabled={busy} onClick={() => onVote('DISLIKE')} aria-label="Не нравится">✕</button><button className="vote skip" disabled={busy} onClick={() => onVote('SKIP')} aria-label="Пропустить">↗</button><button className="vote yes" disabled={busy} onClick={() => onVote('LIKE')} aria-label="Нравится">♥</button></div>
@@ -29,7 +39,8 @@ export function PlaceCard({ place, busy, onVote }: { place: Place; busy: boolean
       <div className="info-title-block">
         <span className="info-label">NOW LOOKING</span>
         <h2>{place.name}</h2>
-        {tags.length > 0 && <div className="tag-row">{tags.slice(0, 4).map(tag => <span className="tag dark" key={tag}>{tag}</span>)}</div>}
+        {/* Tags already sit on the cover art, the same place the film genres
+            occupy on the movie card. No second copy here. */}
         <span className="info-meta">{meta || 'Данные открытых карт'}</span>
       </div>
       <div className="info-label">ADDRESS</div>

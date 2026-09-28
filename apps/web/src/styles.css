@@ -82,8 +82,11 @@
 .place-stage{--place-accent:#efbd42;--place-accent2:#f06aa7}
 .place-visual-card{border:2px solid #111;border-radius:26px;overflow:hidden;background:#1b1b1b;box-shadow:14px 14px 0 var(--place-accent)}
 .place-visual-stage{position:relative;aspect-ratio:16/9;min-height:300px;background:#161616;overflow:hidden}
-.place-photo{position:absolute;inset:0;background-size:cover;background-position:center}
-.place-photo:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,transparent 42%,rgba(0,0,0,.66))}
+/* The scrim lives on the stage, not on the photo: ::after does not render on
+   <img> because it is a replaced element, so a scrim attached there silently
+   disappears and leaves the white caption unreadable. */
+.place-visual-stage:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,transparent 42%,rgba(0,0,0,.66))}
+.place-photo{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center}
 .place-standin{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;background:linear-gradient(135deg,color-mix(in srgb,var(--place-accent) 32%,#1b1b1b),color-mix(in srgb,var(--place-accent2) 26%,#1b1b1b))}
 .place-standin .icon-scaffold{width:120px;height:120px;border-radius:34px;display:grid;place-items:center;color:#fff;border:2px solid rgba(255,255,255,.6);background:rgba(255,255,255,.14);box-shadow:10px 10px 0 rgba(0,0,0,.28)}
 .place-standin .icon-scaffold svg{width:60px;height:60px}
@@ -100,8 +103,114 @@
 .place-actions{margin-top:16px;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
 .place-actions .btn{text-decoration:none}
 .location-tag{display:inline-flex;align-items:center;gap:6px;font:500 11px DM Mono,monospace;letter-spacing:.08em;color:var(--muted)}
-.match-place-media{min-height:520px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;background:radial-gradient(circle at 50% 30%,var(--poster-glow),transparent 40%),linear-gradient(135deg,var(--poster-primary),var(--poster-secondary));padding:34px;color:#fff}
+/* background-image layers paint first-on-top, so the scrim has to be listed
+   before the photo or it ends up underneath it and the white headline loses
+   its contrast against a bright generated cover. */
+.match-place-media{--place-photo:none;position:relative;min-height:520px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;background-image:linear-gradient(180deg,rgba(0,0,0,.12),rgba(0,0,0,.72)),var(--place-photo),radial-gradient(circle at 50% 30%,var(--poster-glow),transparent 40%),linear-gradient(135deg,var(--poster-primary),var(--poster-secondary));background-size:cover;background-position:center;padding:34px;color:#fff}
+.match-kicker-invert{color:rgba(255,255,255,.82)}
+.match-place-name{font-size:clamp(32px,4vw,56px);margin:10px 0 0;letter-spacing:-.04em;text-align:center;line-height:1}
 .match-place-media .icon-scaffold{width:150px;height:150px;border-radius:40px;display:grid;place-items:center;background:rgba(255,255,255,.16);border:2px solid rgba(255,255,255,.6);box-shadow:12px 12px 0 rgba(0,0,0,.28)}
 .match-place-media .icon-scaffold svg{width:76px;height:76px}
 @media(max-width:920px){.place-visual-stage{min-height:320px}}
 @media(max-width:560px){.mode-dial{transform:translateX(-50%) scale(.88);bottom:6px}.mode-hud-item{padding:6px 9px}.place-visual-stage{min-height:240px}.place-caption{left:16px;right:16px;bottom:14px}.match-place-media{min-height:340px}}
+
+/* ------------------------------------------------------------------ *
+ * v1.8 polish: missing primitives, focus visibility, motion safety
+ * ------------------------------------------------------------------ */
+
+/* Genre / cuisine chips. These were rendered on three screens (movie info,
+   place info, match) with no rule at all, so they showed up as bare
+   run-together words. */
+.tag-row{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 0}
+.tag{display:inline-flex;align-items:center;padding:5px 10px;border-radius:999px;font:500 10px/1.3 DM Mono,monospace;letter-spacing:.08em;text-transform:uppercase}
+.tag.dark{background:rgba(17,17,17,.06);border:1.5px solid rgba(17,17,17,.22);color:#2a2823}
+.tag-row .tag:first-child{background:var(--poster-primary,var(--yellow));border-color:rgba(17,17,17,.35)}
+
+/* Last-resort artwork when a film has no trailer and no stills. */
+.poster-fallback{position:absolute;inset:0;display:grid;place-items:center;padding:34px;text-align:center;font-size:clamp(26px,4vw,46px);font-weight:800;letter-spacing:-.04em;line-height:.95;color:#fff;background:linear-gradient(135deg,#1b1b1b,#2c2a26)}
+.poster-fallback:after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(135deg,rgba(239,189,66,.12) 0 14px,transparent 14px 28px)}
+
+/* Feed progress. `.movie-progress` supplies the colour, this the track. */
+.progress-line{height:8px;border:2px solid #111;border-radius:999px;background:rgba(255,255,255,.5);overflow:hidden}
+.progress-line span{display:block;height:100%;border-radius:999px;transition:width .35s cubic-bezier(.2,.7,.3,1)}
+
+/* Lobby + mode picker */
+.lobby-category{margin-top:30px;display:grid;gap:12px}
+.category-picker-foot{font:500 11px DM Mono,monospace;letter-spacing:.08em;color:var(--muted);text-align:center}
+.category-picker-foot strong{color:#111}
+.location-chip.ok{background:#e6f4e0}
+.search-session-page{isolation:isolate}
+
+/* Room code copy feedback. The clipboard write can fail silently, and the code
+   is the one value a user has to relay by hand. */
+.code-copied{margin-left:10px;font:500 10px DM Mono,monospace;letter-spacing:.08em;text-transform:uppercase;color:#2f7d32}
+.code-copied.warn{color:#b3261e}
+
+/* Keyboard focus. The only :focus rules in the sheet were on inputs and just
+   swapped the border colour, so tabbing through the vote buttons and nav
+   links gave no visible position at all. */
+:where(a,button,input,select,textarea,[tabindex]):focus-visible{outline:3px solid var(--pink);outline-offset:3px;border-radius:6px}
+.btn:focus-visible,.vote:focus-visible{outline-color:#111;box-shadow:0 0 0 6px var(--yellow)}
+
+/* Press feedback. Voting is the app's core action and gave no tactile cue. */
+.vote{transition:transform .12s cubic-bezier(.2,.7,.3,1),filter .12s ease}
+.vote:hover:not(:disabled){transform:translateY(-3px) scale(1.02);filter:saturate(1.15)}
+.vote:active:not(:disabled){transform:translateY(1px) scale(.97)}
+.vote.yes:hover:not(:disabled){background:#a5e79c}
+.vote.no:hover:not(:disabled){background:#ff9db0}
+.vote.skip:hover:not(:disabled){background:#c9c9c9}
+
+/* Feed cards settle in rather than snapping. */
+@keyframes card-in{from{opacity:0;transform:translateY(14px) scale(.985)}to{opacity:1;transform:none}}
+.movie-stage-enhanced,.place-visual-card,.movie-info-enhanced{animation:card-in .34s cubic-bezier(.2,.7,.3,1) both}
+
+/* Shimmering placeholder instead of a flat "Подбираем фильмы…" box. */
+@keyframes shimmer{from{background-position:200% 0}to{background-position:-200% 0}}
+.loading-card{background:linear-gradient(100deg,#eeece6 30%,#f8f7f3 50%,#eeece6 70%);background-size:200% 100%;animation:shimmer 1.5s linear infinite;color:transparent!important;border-color:rgba(17,17,17,.18);box-shadow:none}
+.loading-card>*{color:#8a8880!important;animation:shimmer 1.5s linear infinite;background:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.85) 50%,transparent 70%);background-size:200% 100%;-webkit-background-clip:text;background-clip:text}
+
+/* Generated covers are mid-tone, so give the caption a firmer scrim. */
+.place-photo{transition:transform .6s cubic-bezier(.2,.7,.3,1)}
+.place-visual-card:hover .place-photo{transform:scale(1.03)}
+.place-visual-stage:after{background:linear-gradient(180deg,rgba(0,0,0,.05) 30%,rgba(0,0,0,.55) 68%,rgba(0,0,0,.88))}
+
+/* Respect the OS setting. The mode dial uses a spring curve and the backdrop
+   is a 52px blur, both of which are unpleasant for some users. */
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}
+  .mode-dial-wheel{transition:none}
+  .cinematic-backdrop{filter:blur(18px) saturate(1.2)}
+  .loading-card,.loading-card>*{animation:none;background:none;color:#8a8880!important}
+  .movie-stage-enhanced,.place-visual-card,.movie-info-enhanced{animation:none}
+}
+
+/* ------------------------------------------------------------------ *
+ * v1.9 typography + media polish
+ * ------------------------------------------------------------------ */
+
+/* Headings wrap into ragged lines of wildly different length. `balance` costs
+   one extra layout pass and only applies to short blocks, so it is safe here. */
+h1,h2,h3{text-wrap:balance}
+.hero-copy p,.movie-info-enhanced>p,.match-copy p{text-wrap:pretty}
+
+/* Media are decorative: the name is always rendered in the DOM next to them,
+   so dragging a cover out of the page or selecting it is never useful. */
+.place-photo,.trailer-fallback,.match-poster,.history-poster,.cinematic-backdrop{user-select:none;-webkit-user-drag:none}
+
+/* Cover art can be a flat generated gradient, so the caption gets a shadow as
+   well as a scrim. */
+.place-caption h3{text-shadow:0 2px 18px rgba(0,0,0,.55)}
+.match-place-name{text-shadow:0 2px 22px rgba(0,0,0,.5)}
+
+/* Tiles that lead somewhere should answer to the pointer. */
+.history-card,.settings-row,.member-row{transition:transform .16s cubic-bezier(.2,.7,.3,1),box-shadow .16s ease}
+.history-card:hover{transform:translateY(-3px);box-shadow:5px 5px 0 #111}
+.member-row:hover{transform:translateX(3px)}
+
+/* Chrome that matched the paper rather than the OS default blue. */
+*{scrollbar-color:#b9b6ad var(--paper);scrollbar-width:thin}
+::-webkit-scrollbar{width:11px;height:11px}
+::-webkit-scrollbar-track{background:var(--paper)}
+::-webkit-scrollbar-thumb{background:#b9b6ad;border:3px solid var(--paper);border-radius:999px}
+::-webkit-scrollbar-thumb:hover{background:#8d8a82}
+

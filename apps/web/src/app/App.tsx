@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { apiFetch as request } from '../shared/api/client';
-import { getRuntimeWsBaseUrl } from '../shared/api/config';
+import { getRuntimeWsBaseUrl, resolveApiAssetUrl } from '../shared/api/config';
 import { nextStepAfterVote } from '../shared/lib/feed';
 import { clearTokens, getAccessToken, saveTokens } from '../shared/lib/storage';
 import { getYouTubeEmbedUrl } from '../shared/lib/youtube';
@@ -321,12 +321,38 @@ function RoomLobby({ user, token, room, onBack, onRoomChange, onStarted, onError
     } catch (e) { onError(e instanceof Error ? e.message : 'Не удалось начать сессию'); }
     finally { setStarting(false); }
   };
-  const copyCode = () => navigator.clipboard?.writeText(room.code).catch(() => undefined);
+  const [copied, setCopied] = useState<'ok' | 'fail' | null>(null);
+  const copyCode = async () => {
+    try {
+      // navigator.clipboard is undefined on an insecure origin, and the
+      // permission is rejected outright when the page is not focused.
+      await navigator.clipboard.writeText(room.code);
+      setCopied('ok');
+    } catch {
+      setCopied('fail');
+    }
+  };
+  // Clear the confirmation so it does not linger after a stale copy.
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(null), 4000);
+    return () => clearTimeout(timer);
+  }, [copied]);
   const heading = MODE_OPTIONS.find(option => option.mode === pendingTask);
   const needsLocation = pendingTask !== 'movies';
   const canReady = !needsLocation || Boolean(location);
   return <Shell eyebrow="ROOM LOBBY" title={<>{room.name}<br /><span>{room.code}</span></>} subtitle="Выберите категорию для игры и ждите, пока все будут готовы." actions={<button className="nav-link" onClick={onBack}>← выйти</button>}>
-    <div className="room-head"><div><span className="eyebrow">ROOM CODE</span><button className="code-pill" onClick={copyCode}>{room.code} ⧉</button></div><div className={`status-dot ${allReady ? 'ready' : ''}`}>{allReady ? 'Все готовы' : `${room.members.filter(m => m.is_ready).length}/${room.members.length} готовы`}</div></div>
+    {/* The room code is the one string a user has to relay to everyone else,
+        so a failed clipboard write has to be visible rather than silent. */}
+    <div className="room-head">
+      <div>
+        <span className="eyebrow">ROOM CODE</span>
+        <button className="code-pill" onClick={() => void copyCode()}>{room.code} ⧉</button>
+        {copied === 'ok' && <span className="code-copied" role="status">Скопировано</span>}
+        {copied === 'fail' && <span className="code-copied warn" role="status">Скопируйте вручную: {room.code}</span>}
+      </div>
+      <div className={`status-dot ${allReady ? 'ready' : ''}`}>{allReady ? 'Все готовы' : `${room.members.filter(m => m.is_ready).length}/${room.members.length} готовы`}</div>
+    </div>
     <div className="lobby-category">
       <div className="category-picker">
         <span className="eyebrow">{isOwner ? 'Крутите колесо — выберите категорию' : 'Категория игры'}</span>
@@ -600,6 +626,9 @@ function MatchScreen({ result, onBack }: { result: MatchResult | null; onBack: (
 
   const mapUrl = place ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${place.latitude},${place.longitude}`)}` : null;
   const tags = place ? (place.tags.length > 0 ? place.tags : (place.cuisine ?? '').split(';').map(s => s.trim()).filter(Boolean).slice(0, 4)) : [];
+  // Same precedence as PlaceCard: a real OSM photo when one exists, generated
+  // artwork otherwise. The icon standin only survives if both fail.
+  const placeCover = place ? resolveApiAssetUrl(place.image_url) ?? resolveApiAssetUrl(place.cover_url) : null;
 
   return <div className="match-page" style={style}>
     <div className="match-glow" />
@@ -609,7 +638,11 @@ function MatchScreen({ result, onBack }: { result: MatchResult | null; onBack: (
         <div className="hero-copy"><span className="eyebrow">MATCH FOUND</span><h1>Кажется, у вас <span>совпадение.</span></h1><p>{result?.kind === 'place' ? 'Все участники выбрали одно место. Осталось только дойти.' : 'Все участники выбрали один фильм. Вечер уже практически спасён.'}</p></div>
         <div className="match-card-enhanced">
           {movie?.poster_url && <div className="match-poster" style={{ backgroundImage: `url(${movie.poster_url})` }}><div className="match-poster-glow" /></div>}
-          {result?.kind === 'place' && place && <div className="match-place-media"><div className="icon-scaffold"><PlaceCategoryIcon category={place.category} size={76} /></div><span className="match-kicker" style={{ color: 'rgba(255,255,255,.8)' }}>{place.category === 'RESTAURANT' ? 'RESTAURANT' : 'ENTERTAINMENT'} · {place.city ?? 'рядом с вами'}</span><h2 style={{ fontSize: 'clamp(32px,4vw,56px)', margin: '10px 0 0', letterSpacing: '-.04em', textAlign: 'center' }}>{place.name}</h2></div>}
+          {/* The photo goes in as a custom property, not as an inline
+              backgroundImage: an inline background replaces the whole
+              `background` shorthand, which would drop the accent gradient and
+              the scrim the white headline needs. CSS composes the layers. */}
+          {result?.kind === 'place' && place && <div className="match-place-media" style={{ '--place-photo': placeCover ? `url(${placeCover})` : 'none' } as React.CSSProperties}>{!placeCover && <div className="icon-scaffold"><PlaceCategoryIcon category={place.category} size={76} /></div>}<span className="match-kicker match-kicker-invert">{place.category === 'RESTAURANT' ? 'RESTAURANT' : 'ENTERTAINMENT'} · {place.city ?? 'рядом с вами'}</span><h2 className="match-place-name">{place.name}</h2></div>}
           <div className="match-copy">
             {result?.kind === 'place' && place ? <>
               <span className="match-kicker">TONIGHT’S PICK</span>

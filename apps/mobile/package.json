@@ -5,15 +5,20 @@
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "node scripts/generate-typed-routes.js && tsc --noEmit",
-    "typecheck": "node scripts/generate-typed-routes.js && tsc --noEmit"
+    "typecheck": "node scripts/generate-typed-routes.js && tsc --noEmit",
+    "prebuild:android": "expo prebuild --platform android && node scripts/configure-android-release.js",
+    "apk:debug": "cd android && ./gradlew assembleDebug",
+    "apk:release": "bash scripts/build-release-apk.sh",
+    "keystore": "bash scripts/generate-upload-keystore.sh"
   },
   "dependencies": {
     "expo": "^53.0.20",
     "expo-camera": "~16.1.11",
+    "expo-constants": "~17.1.8",
     "expo-router": "^5.1.4",
     "expo-secure-store": "~14.2.4",
     "react": "19.0.0",
