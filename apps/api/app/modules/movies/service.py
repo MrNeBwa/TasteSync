@@ -7,11 +7,15 @@ from app.repositories.movie_repository import MovieRepository
 
 
 class MovieService:
-    def __init__(self, repository: MovieRepository, provider: MovieProvider) -> None:
+    def __init__(
+        self, repository: MovieRepository, provider: MovieProvider | None = None
+    ) -> None:
         self.repository = repository
         self.provider = provider
 
     async def sync_popular(self, *, pages: int = 3) -> int:
+        if self.provider is None:
+            raise RuntimeError("sync_popular requires a movie provider")
         count = 0
         for page in range(1, pages + 1):
             movies = await self.provider.get_popular_movies(page=page)
@@ -19,6 +23,21 @@ class MovieService:
                 await self._upsert(movie)
                 count += 1
         return count
+
+    async def seed_bundled(self) -> int:
+        """Load the offline fallback catalog (see `bundled.py`)."""
+        from app.modules.movies.bundled import bundled_rows
+
+        rows = bundled_rows()
+        for row in rows:
+            await self.repository.upsert_movie(**row)
+        return len(rows)
+
+    async def drop_bundled(self) -> int:
+        """Remove fallback rows so real provider data is the only catalog."""
+        from app.modules.movies.bundled import BUNDLED_PROVIDER
+
+        return await self.repository.delete_by_provider(BUNDLED_PROVIDER)
 
     async def _upsert(self, movie: ProviderMovie):
         release_date = date.fromisoformat(movie.release_date) if movie.release_date else None

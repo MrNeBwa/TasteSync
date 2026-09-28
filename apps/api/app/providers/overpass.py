@@ -226,11 +226,24 @@ class OverpassProvider(PlacesProvider):
         payload = await self._request(query)
         places: list[ProviderPlace] = []
         seen: set[str] = set()
+        # Overpass returns a single venue more than once when it is mapped both
+        # as a bare node and as a tagged way/relation. Those share a name and a
+        # location but not a provider_id, so keying on provider_id alone lets the
+        # same place reach the user twice and then 409s as "already voted".
+        seen_places: set[tuple[str, int, int]] = set()
         for element in payload.get("elements", []):
             mapped = self._map_element(element)
             if mapped is None or mapped.provider_id in seen:
                 continue
+            identity = (
+                mapped.name.casefold().strip(),
+                round(mapped.latitude, 4),
+                round(mapped.longitude, 4),
+            )
+            if identity in seen_places:
+                continue
             seen.add(mapped.provider_id)
+            seen_places.add(identity)
             places.append(mapped)
             if len(places) >= limit:
                 break

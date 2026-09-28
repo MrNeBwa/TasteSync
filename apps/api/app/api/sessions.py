@@ -14,6 +14,7 @@ from app.modules.sessions.schemas import MatchResponse, SessionResponse, VoteReq
 from app.modules.sessions.service import (
     CannotFinishSessionError,
     DuplicateVoteError,
+    MovieCatalogEmptyError,
     MovieNotFoundError,
     MovieSessionService,
     SessionNotActiveError,
@@ -99,6 +100,8 @@ async def get_recommendations(
         raise HTTPException(status_code=403, detail="User is not a member of this room") from exc
     except SessionNotActiveError as exc:
         raise HTTPException(status_code=409, detail="Session is not active") from exc
+    except MovieCatalogEmptyError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     return [movie_response(movie) for movie in movies]
 
 

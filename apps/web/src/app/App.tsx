@@ -1,11 +1,13 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { apiFetch as request } from '../shared/api/client';
 import { getRuntimeWsBaseUrl } from '../shared/api/config';
+import { nextStepAfterVote } from '../shared/lib/feed';
 import { clearTokens, getAccessToken, saveTokens } from '../shared/lib/storage';
 import { getYouTubeEmbedUrl } from '../shared/lib/youtube';
 import { getCurrentCity, geocodeCity, isGeoSupported } from '../shared/lib/geo';
 import { placesApi } from '../features/places/api';
 import { roomsApi } from '../features/rooms/api';
+import { describeMovieFeedError } from '../features/movies/api';
 import { ModeCircle, MODE_OPTIONS } from '../components/ModeCircle';
 import { PlaceCard } from '../components/PlaceCard';
 import { PlaceCategoryIcon, SearchModeIcon } from '../components/icons';
@@ -415,6 +417,11 @@ function SearchSession({ token, session, room, onMatch, onFinish, location, onLo
   const [city, setCity] = useState<string | null>(null);
   const [geoDenied, setGeoDenied] = useState(false);
   const coordsRef = useRef<Coords | null>(null);
+  // Guards against out-of-order feed responses. The mode can change mid-session
+  // (room.task arrives over the socket) and a vote can trigger a reload while a
+  // previous one is still in flight, so without this an older batch can land
+  // after a newer one and resurrect items that were already rated.
+  const feedSeqRef = useRef(0);
 
   useEffect(() => {
     if (location) {
@@ -428,12 +435,14 @@ function SearchSession({ token, session, room, onMatch, onFinish, location, onLo
   const item = mode === 'movies' ? movie : place;
 
   const loadFeed = useMemo(() => async (targetMode: SearchMode) => {
+    const seq = ++feedSeqRef.current;
     setLoading(true);
     setMsg('');
     setIndex(0);
     try {
       if (targetMode === 'movies') {
         const items = await request<Movie[]>(`/sessions/${session.id}/movies?limit=8&exploration_ratio=0.25`, {}, token);
+        if (seq !== feedSeqRef.current) return;
         setMovies(items);
         setPlaces([]);
         return;
@@ -444,8 +453,9 @@ function SearchSession({ token, session, room, onMatch, onFinish, location, onLo
           const located = await getCurrentCity();
           current = located.coords;
           coordsRef.current = located.coords;
-          setCity(located.city);
+          if (seq === feedSeqRef.current) setCity(located.city);
         } catch {
+          if (seq !== feedSeqRef.current) return;
           setGeoDenied(true);
           setLoading(false);
           setMsg('Разрешите доступ к геолокации — заведения ищем рядом с вами.');
@@ -453,56 +463,21 @@ function SearchSession({ token, session, room, onMatch, onFinish, location, onLo
         }
       }
       const items = await placesApi.forSession(session.id, token, targetMode, current);
+      if (seq !== feedSeqRef.current) return;
       setPlaces(items);
       setMovies([]);
     } catch (e) {
-      setMsg(e instanceof Error ? e.message : 'Не удалось загрузить подборку');
+      if (seq !== feedSeqRef.current) return;
+      setMsg(targetMode === 'movies' ? describeMovieFeedError(e) : (e instanceof Error ? e.message : 'Не удалось загрузить подборку'));
     } finally {
-      setLoading(false);
+      if (seq === feedSeqRef.current) setLoading(false);
     }
   }, [session.id, token]);
 
   useEffect(() => {
-    let active = true;
-    setLoading(true);
-    setMsg('');
-    setIndex(0);
     setGeoDenied(false);
-    if (mode === 'movies') {
-      request<Movie[]>(`/sessions/${session.id}/movies?limit=8&exploration_ratio=0.25`, {}, token)
-        .then(items => { if (active) { setMovies(items); setPlaces([]); } })
-        .catch(e => { if (active) setMsg(e instanceof Error ? e.message : 'Не удалось загрузить фильмы'); })
-        .finally(() => { if (active) setLoading(false); });
-      return () => { active = false; };
-    }
-    (async () => {
-      let current = coordsRef.current;
-      if (!current) {
-        try {
-          const located = await getCurrentCity();
-          current = located.coords;
-          coordsRef.current = located.coords;
-          if (active) setCity(located.city);
-        } catch {
-          if (active) {
-            setGeoDenied(true);
-            setLoading(false);
-            setMsg('Разрешите доступ к геолокации — заведения ищем рядом с вами.');
-          }
-          return;
-        }
-      }
-      try {
-        const items = await placesApi.forSession(session.id, token, mode, current);
-        if (active) { setPlaces(items); setMovies([]); }
-      } catch (e) {
-        if (active) setMsg(e instanceof Error ? e.message : 'Не удалось найти заведения рядом');
-      } finally {
-        if (active) setLoading(false);
-      }
-    })();
-    return () => { active = false; };
-  }, [mode, session.id, token]);
+    void loadFeed(mode);
+  }, [mode, session.id, token, loadFeed]);
 
   useEffect(() => {
     if (!movie?.poster_url) {
@@ -521,7 +496,7 @@ function SearchSession({ token, session, room, onMatch, onFinish, location, onLo
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [movie, busy, index, movies.length]);
+  }, [movie, busy, loading, index, movies.length]);
 
   const pageStyle = mode === 'movies'
     ? {
@@ -541,7 +516,10 @@ function SearchSession({ token, session, room, onMatch, onFinish, location, onLo
   const swatchSecondary = mode === 'movies' ? palette.secondary : pageStyle['--poster-secondary'];
 
   const vote = async (value: VoteValue) => {
-    if (!item || busy) return;
+    // `loading` matters as much as `busy`: while a batch is being replaced the
+    // card is hidden but the keyboard shortcuts are still bound, and they would
+    // vote on the outgoing, possibly stale, item.
+    if (!item || busy || loading) return;
     setBusy(true);
     setMsg('');
     try {
@@ -561,7 +539,13 @@ function SearchSession({ token, session, room, onMatch, onFinish, location, onLo
       if (index + 1 >= (mode === 'movies' ? movies : places).length) await loadFeed(mode);
       else setIndex(i => i + 1);
     } catch (e) {
-      setMsg(e instanceof Error ? e.message : 'Не удалось сохранить выбор');
+      // A stale card (already rated in another tab, or from a batch that landed
+      // before the mode switched) must not dead-end the user: step over it
+      // instead of showing an error they cannot act on.
+      const step = nextStepAfterVote(e, index, (mode === 'movies' ? movies : places).length);
+      if (step === 'reload') await loadFeed(mode);
+      else if (step === 'advance') setIndex(i => i + 1);
+      else setMsg(e instanceof Error ? e.message : 'Не удалось сохранить выбор');
     } finally { setBusy(false); }
   };
 
@@ -594,7 +578,7 @@ function MovieCard({ movie, busy, onVote }: { movie: Movie; busy: boolean; onVot
   return <div className="movie-stage-enhanced">
     <section className="movie-visual-card">
       <div className="trailer-frame-wrap">
-        {embedUrl ? <iframe className="trailer-frame" src={`${embedUrl}?autoplay=1&mute=1&controls=1&playsinline=1&rel=0&modestbranding=1`} title={`${movie.title} trailer`} allow="autoplay; encrypted-media; picture-in-picture" referrerPolicy="strict-origin-when-cross-origin" /> : movie.backdrop_url ? <img className="trailer-fallback" src={movie.backdrop_url} alt="" /> : movie.poster_url ? <img className="trailer-fallback" src={movie.poster_url} alt="" /> : <div className="poster-fallback">{movie.title}</div>}
+        {embedUrl ? <iframe className="trailer-frame" src={embedUrl} title={`${movie.title} trailer`} allow="autoplay; encrypted-media; picture-in-picture" referrerPolicy="strict-origin-when-cross-origin" /> : movie.backdrop_url ? <img className="trailer-fallback" src={movie.backdrop_url} alt="" /> : movie.poster_url ? <img className="trailer-fallback" src={movie.poster_url} alt="" /> : <div className="poster-fallback">{movie.title}</div>}
         <div className="trailer-status">TRAILER · AUTOPLAY · MUTED</div>
       </div>
       <div className="movie-votes"><button className="vote no" disabled={busy} onClick={() => onVote('DISLIKE')} aria-label="Не нравится">✕</button><button className="vote skip" disabled={busy} onClick={() => onVote('SKIP')} aria-label="Пропустить">↗</button><button className="vote yes" disabled={busy} onClick={() => onVote('LIKE')} aria-label="Нравится">♥</button></div>

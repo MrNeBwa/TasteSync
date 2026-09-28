@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from uuid import UUID, uuid4
 
+from app.core.config import CATALOG_EMPTY_MESSAGE
 from app.models.room import RoomStatus
 from app.models.session import MovieSession, SessionStatus
 from app.models.vote import VoteValue
@@ -23,6 +24,10 @@ class SessionNotActiveError(Exception):
 
 class SessionNotMemberError(Exception):
     pass
+
+
+class MovieCatalogEmptyError(Exception):
+    """The catalog has no movies at all, so no feed can be produced."""
 
 
 class MovieNotFoundError(Exception):
@@ -106,6 +111,12 @@ class MovieSessionService:
         movie_session = await self.get_for_member(session_id=session_id, user_id=user_id)
         if movie_session.status != SessionStatus.ACTIVE:
             raise SessionNotActiveError
+
+        # An empty catalog is a configuration/seed failure, not an exhausted
+        # feed. Reporting it as 503 stops the client from claiming the
+        # selection simply ran out of movies.
+        if await self.movies.count() == 0:
+            raise MovieCatalogEmptyError(CATALOG_EMPTY_MESSAGE)
 
         members = await self.rooms.list_members(movie_session.room_id)
         user_ids = [member.user_id for member in members]

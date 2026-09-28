@@ -5,8 +5,12 @@ from typing import Any
 
 import httpx
 
-from app.core.config import get_settings
+from app.core.config import TMDB_MISSING_TOKEN_MESSAGE, get_settings
 from app.providers.base import MovieProvider, ProviderGenre, ProviderMovie, ProviderVideo
+
+
+class TmdbNotConfiguredError(RuntimeError):
+    """Raised when the provider is used without a TMDB API token."""
 
 
 class TMDBProvider(MovieProvider):
@@ -17,7 +21,7 @@ class TMDBProvider(MovieProvider):
     def __init__(self) -> None:
         settings = get_settings()
         if not settings.tmdb_api_token:
-            raise RuntimeError("TMDB_API_TOKEN is not configured")
+            raise TmdbNotConfiguredError(TMDB_MISSING_TOKEN_MESSAGE)
         self._genre_cache: dict[int, str] | None = None
         self._client = httpx.AsyncClient(
             base_url=self.BASE_URL,

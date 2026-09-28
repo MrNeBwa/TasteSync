@@ -42,4 +42,30 @@ pnpm install
 pnpm dev:web
 ```
 
-The API seeds the movie catalog from TMDB automatically on startup when the `movies` table is empty. `/health` (also available at `/api/health`) reports DB/Redis connectivity.
+The API seeds the movie catalog on startup when the `movies` table is empty. `/health` (also available at `/api/health`) reports DB/Redis connectivity plus `catalog` (`ok`/`empty`) and `catalog_source` (`tmdb`/`bundled`).
+
+### Movie catalog: TMDB, with an offline fallback
+
+TMDB is the primary source. Set a read access token to use it:
+
+```bash
+cd apps/api
+cp .env.example .env
+# put a TMDB API read access token into TMDB_API_TOKEN
+```
+
+If the token is missing **or the network blocks `api.themoviedb.org`**, the API seeds a
+bundled 40-film catalog instead and logs which source it used. Movie sessions work
+either way and trailers play; the fallback set just has no poster images, so those films
+show a gradient placeholder.
+
+```bash
+curl -s localhost:8000/health
+# {"catalog":"ok","catalog_source":"bundled","movies":40,...}
+```
+
+Once TMDB is reachable, `POST /api/movies/sync-popular?pages=3` replaces the fallback rows
+with real data (posters, trailers) — or just restart the API. If both sources fail, the
+catalog stays empty, `/health` reports `degraded`, and
+`GET /api/sessions/{id}/movies` answers `503` with an actionable message rather than an
+empty list, so the web UI never claims the selection simply ran out.

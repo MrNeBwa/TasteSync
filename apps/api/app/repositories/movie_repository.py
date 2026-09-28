@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -81,6 +81,23 @@ class MovieRepository:
             .options(selectinload(Movie.genres).selectinload(MovieGenre.genre))
         )
         return await self.session.scalar(stmt)
+
+    async def count(self) -> int:
+        return int(await self.session.scalar(select(func.count()).select_from(Movie)) or 0)
+
+    async def count_by_provider(self, provider: str) -> int:
+        stmt = select(func.count()).select_from(Movie).where(Movie.provider == provider)
+        return int(await self.session.scalar(stmt) or 0)
+
+    async def delete_by_provider(self, provider: str) -> int:
+        """Delete a provider's movies plus the rows that reference them."""
+        ids = select(Movie.id).where(Movie.provider == provider)
+        await self.session.execute(
+            delete(MovieGenre).where(MovieGenre.movie_id.in_(ids))
+        )
+        result = await self.session.execute(delete(Movie).where(Movie.provider == provider))
+        await self.session.flush()
+        return int(result.rowcount or 0)
 
     async def list_popular(self, *, limit: int = 30, include_adult: bool = True) -> list[Movie]:
         stmt = select(Movie).options(selectinload(Movie.genres).selectinload(MovieGenre.genre))

@@ -1,6 +1,7 @@
 from datetime import date
 from uuid import UUID
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,7 +11,7 @@ from app.models.movie import Movie
 from app.models.user import User
 from app.modules.movies.schemas import MovieResponse, to_movie_response
 from app.modules.movies.service import MovieService
-from app.providers.tmdb import TMDBProvider
+from app.providers.tmdb import TMDBProvider, TmdbNotConfiguredError
 from app.repositories.movie_repository import MovieRepository
 
 router = APIRouter(prefix="/movies", tags=["movies"])
@@ -60,10 +61,21 @@ async def sync_popular(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> dict[str, int]:
-    provider = TMDBProvider()
     try:
-        count = await MovieService(MovieRepository(session), provider).sync_popular(pages=pages)
+        provider = TMDBProvider()
+    except TmdbNotConfiguredError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    try:
+        service = MovieService(MovieRepository(session), provider)
+        # A successful provider sync supersedes the offline fallback rows.
+        dropped = await service.drop_bundled()
+        count = await service.sync_popular(pages=pages)
         await session.commit()
-        return {"synced": count}
+        return {"synced": count, "dropped_bundled": dropped}
+    except httpx.HTTPError as exc:
+        await session.rollback()
+        raise HTTPException(
+            status_code=502, detail=f"TMDB request failed: {exc}"
+        ) from exc
     finally:
         await provider.close()

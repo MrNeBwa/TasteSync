@@ -1,9 +1,9 @@
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
+import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import func, select
 
 from app.api.auth import router as auth_router
 from app.api.health import router as health_router
@@ -17,26 +17,72 @@ from app.api.history import router as history_router
 from app.core.config import get_settings
 from app.core.cors import get_cors_config
 from app.db.session import AsyncSessionLocal, close_db
-from app.models.movie import Movie
 from app.modules.movies.service import MovieService
 from app.providers.tmdb import TMDBProvider
 from app.repositories.movie_repository import MovieRepository
 
+logger = logging.getLogger("app.catalog")
+if not logger.handlers and not logging.getLogger().handlers:
+    # uvicorn only configures its own loggers, so application loggers have no
+    # handler and INFO records vanish. The catalog seed is the one startup
+    # message that must always reach the terminal, so attach a handler here
+    # without touching the root logger.
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+    logger.addHandler(handler)
+    logger.propagate = False
+logger.setLevel(logging.INFO)
+
 
 async def seed_catalog_if_empty() -> None:
+    """Load the movie catalog on startup when the table is still empty.
+
+    TMDB is the primary source. When it cannot be used at all (no token, or the
+    network blocks the host) the API falls back to the bundled offline catalog
+    so movie sessions still have something to show, and says so in the log.
+    """
     try:
         async with AsyncSessionLocal() as session:
-            count = await session.scalar(select(func.count()).select_from(Movie))
-            if count:
+            service = MovieService(MovieRepository(session))
+            if await service.repository.count():
                 return
-            provider = TMDBProvider()
+
+            provider: TMDBProvider | None = None
             try:
-                await MovieService(MovieRepository(session), provider).sync_popular(pages=2)
+                provider = TMDBProvider()
+                synced = await MovieService(
+                    MovieRepository(session), provider
+                ).sync_popular(pages=2)
+            except Exception as exc:  # noqa: BLE001 - any provider problem falls back
+                logger.warning(
+                    "TMDB is unavailable (%s: %s); seeding the bundled offline "
+                    "catalog instead. Set TMDB_API_TOKEN and reach "
+                    "api.themoviedb.org to replace it.",
+                    type(exc).__name__,
+                    exc,
+                )
+            else:
+                await session.commit()
+                logger.info("Seeded %s movies from TMDB", synced)
+                return
             finally:
-                await provider.close()
+                if provider is not None:
+                    await provider.close()
+
+            seeded = await service.seed_bundled()
             await session.commit()
-    except Exception:
-        pass
+            logger.info(
+                "Seeded %s movies from the bundled offline catalog. Restart or "
+                "POST /api/movies/sync-popular once TMDB is reachable to replace them.",
+                seeded,
+            )
+    except Exception as exc:  # noqa: BLE001 - startup must survive a missing catalog
+        logger.error(
+            "Movie catalog is empty and could not be seeded (%s: %s). "
+            "Movie sessions will return no recommendations until the catalog is loaded.",
+            type(exc).__name__,
+            exc,
+        )
 
 
 @asynccontextmanager

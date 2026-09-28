@@ -3,6 +3,15 @@ from functools import lru_cache
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+TMDB_MISSING_TOKEN_MESSAGE = (
+    "TMDB_API_TOKEN is not configured. Set it in apps/api/.env (see .env.example)."
+)
+CATALOG_EMPTY_MESSAGE = (
+    "The movie catalog is empty. Set TMDB_API_TOKEN in apps/api/.env, then "
+    "POST /api/movies/sync-popular (or restart the API, which seeds on startup)."
+)
+
+
 class Settings(BaseSettings):
     app_name: str = "Movie Match API"
     environment: str = "local"
@@ -29,3 +38,7 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+def is_tmdb_configured() -> bool:
+    return bool(get_settings().tmdb_api_token)

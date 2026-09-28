@@ -51,10 +51,17 @@ class PlaceService:
         )
 
         selected: list[Place] = []
+        seen_names: set[str] = set()
         for candidate in candidates:
             place = await self._upsert(candidate)
             if place.id in voted or place.id in matches:
                 continue
+            # Same venue under two provider ids (node + way) would otherwise be
+            # two cards with one name, and the second one 409s on vote.
+            name = place.name.casefold().strip()
+            if name in seen_names:
+                continue
+            seen_names.add(name)
             selected.append(place)
             if len(selected) >= limit:
                 break
