@@ -59,12 +59,52 @@ async function parseBody(response: Response): Promise<unknown> {
   }
 }
 
+const KNOWN_VALIDATION_MESSAGES: Record<string, string> = {
+  'Field required': 'поле не заполнено',
+  'String should have at least 1 character': 'строка не должна быть пустой',
+  'Input should be a valid dictionary or object to extract fields from':
+    'тело запроса должно быть JSON',
+  'String should have at most 128 characters': 'значение слишком длинное',
+  'String should have at least 3 characters': 'слишком короткое значение',
+  'String should have at least 8 characters': 'не короче 8 символов',
+};
+
+function translateValidationMessage(message: string): string {
+  return KNOWN_VALIDATION_MESSAGES[message] ?? message;
+}
+
+/**
+ * Turn a FastAPI 422 `detail` (a list of validation errors) into a readable
+ * string. The old `String(detail)` rendered `[object Object]`, which left users
+ * staring at an unactionable 422 whenever a field failed validation.
+ */
+function describeValidation(detail: unknown): string {
+  if (typeof detail === 'string') return detail;
+  if (!Array.isArray(detail)) return '';
+  return detail
+    .map((item) => {
+      if (typeof item !== 'object' || item === null) return '';
+      const { loc, msg } = item as { loc?: unknown; msg?: unknown };
+      const field = (Array.isArray(loc) ? loc.filter((part) => part !== 'body') : [])
+        .map(String)
+        .join('.');
+      const message = translateValidationMessage(typeof msg === 'string' ? msg : '');
+      return field ? `${field}: ${message}` : message;
+    })
+    .filter(Boolean)
+    .join(' · ');
+}
+
 function getErrorMessage(body: unknown, status: number): string {
   if (typeof body === 'object' && body !== null && 'detail' in body) {
-    return String((body as { detail: unknown }).detail);
+    const described = describeValidation((body as { detail: unknown }).detail);
+    if (described) return described;
   }
   return `HTTP ${status}`;
 }
+
+/** @internal exposed for tests */
+export { getErrorMessage };
 
 async function performRequest<T>(
   path: string,

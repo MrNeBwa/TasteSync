@@ -37,6 +37,31 @@ export type HistoryItem = {
   matched_movies: Movie[];
 };
 
+/**
+ * Turn a FastAPI 422 `detail` (a list of validation errors) into a readable
+ * string. The old `String(detail)` rendered `[object Object]`, so users could
+ * not see which field failed.
+ */
+function formatApiDetail(body: unknown): string {
+  if (typeof body !== 'object' || body === null || !('detail' in body)) {
+    return '';
+  }
+  const detail = (body as { detail: unknown }).detail;
+  if (!Array.isArray(detail)) return String(detail);
+  return detail
+    .map((item) => {
+      if (typeof item !== 'object' || item === null) return '';
+      const { loc, msg } = item as { loc?: unknown; msg?: unknown };
+      const field = (Array.isArray(loc) ? loc.filter((part) => part !== 'body') : [])
+        .map(String)
+        .join('.');
+      const message = typeof msg === 'string' ? msg : '';
+      return field ? `${field}: ${message}` : message;
+    })
+    .filter(Boolean)
+    .join(' · ');
+}
+
 export async function request<T>(path: string, options: RequestInit = {}, token?: string): Promise<T> {
   const doFetch = async (authToken?: string): Promise<Response> => {
     const headers = new Headers(options.headers);
@@ -59,7 +84,7 @@ export async function request<T>(path: string, options: RequestInit = {}, token?
   let body: unknown = null;
   try { body = text ? JSON.parse(text) : null; } catch { body = text; }
   if (!res.ok) {
-    const detail = typeof body === 'object' && body && 'detail' in body ? String((body as { detail: unknown }).detail) : `HTTP ${res.status}`;
+    const detail = formatApiDetail(body) || `HTTP ${res.status}`;
     throw new Error(detail);
   }
   return body as T;

@@ -12,7 +12,7 @@ from app.db.session import get_db_session
 from app.models.place import Place, PlaceCategory
 from app.models.user import User
 from app.modules.places.cover import place_cover_svg
-from app.modules.places.schemas import PlaceResponse
+from app.modules.places.schemas import PlaceResponse, to_place_response
 from app.modules.places.service import PlaceNotFoundError, PlaceService
 from app.modules.sessions.service import (
     MovieSessionService,
@@ -27,27 +27,6 @@ from app.repositories.room_repository import RoomRepository
 from app.repositories.session_repository import SessionRepository
 
 router = APIRouter(tags=["places"])
-
-
-def place_response(place) -> PlaceResponse:
-    return PlaceResponse(
-        id=place.id,
-        name=place.name,
-        category=place.category,
-        address=place.address,
-        city=place.city,
-        latitude=place.latitude,
-        longitude=place.longitude,
-        image_url=place.image_url,
-        rating=place.rating,
-        price_level=place.price_level,
-        cuisine=place.cuisine,
-        tags=place.tags.split("|") if place.tags else [],
-        website=place.website,
-        phone=place.phone,
-        opening_hours=place.opening_hours,
-        cover_url=f"/api/places/{place.id}/cover.svg",
-    )
 
 
 @router.get("/places/{place_id}/cover.svg", include_in_schema=False)
@@ -90,7 +69,7 @@ async def get_place(
         raise HTTPException(status_code=404, detail="Place not found") from exc
     finally:
         await provider.close()
-    return place_response(place)
+    return to_place_response(place)
 
 
 @router.get("/sessions/{session_id}/places", response_model=list[PlaceResponse])
@@ -131,4 +110,4 @@ async def session_places(
         await db.commit()
     finally:
         await provider.close()
-    return [place_response(place) for place in places]
+    return [to_place_response(place) for place in places]

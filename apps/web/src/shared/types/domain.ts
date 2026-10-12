@@ -56,6 +56,20 @@ export type MatchResult =
   | { kind: 'movie'; category: 'movies'; movie: Movie }
   | { kind: 'place'; category: 'restaurants' | 'entertainment'; place: Place };
 
+/**
+ * Payload of `GET /sessions/{id}/match` — the newest match resolved into the
+ * card a client renders, so a poller that missed the realtime event can still
+ * switch everyone to the same result.
+ */
+export type SessionMatch = {
+  kind: 'movie' | 'place';
+  match_id: string;
+  created_at: string;
+  category: string;
+  movie: Movie | null;
+  place: Place | null;
+};
+
 export type Coords = { latitude: number; longitude: number };
 
 export type UserLocation = { coords: Coords; city: string | null };

@@ -17,6 +17,18 @@ def test_movie_detail_endpoint_exists() -> None:
     assert "/api/movies/{movie_id}" in schema["paths"]
 
 
+def test_session_match_endpoint_exists() -> None:
+    schema = app.openapi()
+    assert "/api/sessions/{session_id}/match" in schema["paths"]
+    assert "get" in schema["paths"]["/api/sessions/{session_id}/match"]
+
+
+def test_session_match_response_shape() -> None:
+    schema = app.openapi()
+    props = schema["components"]["schemas"]["SessionMatchResponse"]["properties"]
+    assert set(props) >= {"kind", "match_id", "created_at", "category", "movie", "place"}
+
+
 def test_room_task_update_endpoint_exists() -> None:
     schema = app.openapi()
     assert "/api/rooms/{room_id}/task" in schema["paths"]

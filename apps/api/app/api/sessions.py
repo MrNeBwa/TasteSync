@@ -8,9 +8,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user
 from app.db.session import get_db_session
+from app.models.match import Match
+from app.models.place import PlaceCategory
 from app.models.user import User
 from app.modules.movies.schemas import MovieResponse, to_movie_response
-from app.modules.sessions.schemas import MatchResponse, SessionResponse, VoteRequest, VoteResponse
+from app.modules.places.schemas import to_place_response
+from app.modules.sessions.schemas import (
+    MatchResponse,
+    SessionMatchResponse,
+    SessionResponse,
+    VoteRequest,
+    VoteResponse,
+)
 from app.modules.sessions.service import (
     CannotFinishSessionError,
     DuplicateVoteError,
@@ -76,6 +85,55 @@ async def get_matches(
         raise HTTPException(status_code=403, detail="User is not a member of this room") from exc
     matches = await svc.sessions.list_matches(session_id=session_id)
     return [MatchResponse.model_validate(match) for match in matches]
+
+
+@router.get("/{session_id}/match", response_model=SessionMatchResponse | None)
+async def get_current_match(
+    session_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SessionMatchResponse | None:
+    """Latest match of a session, for clients that missed the realtime event."""
+    svc = service(db)
+    try:
+        await svc.get_for_member(session_id=session_id, user_id=current_user.id)
+    except SessionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Session not found") from exc
+    except SessionNotMemberError as exc:
+        raise HTTPException(status_code=403, detail="User is not a member of this room") from exc
+
+    found = await svc.latest_match(session_id=session_id)
+    if found is None:
+        return None
+    _kind, match = found
+
+    # `match` is a `Match | PlaceMatch`; the isinstance narrows the else branch.
+    if isinstance(match, Match):
+        movie = await svc.movies.get_by_id(match.movie_id)
+        if movie is None:
+            return None
+        return SessionMatchResponse(
+            kind="movie",
+            match_id=match.id,
+            created_at=match.created_at,
+            category="movies",
+            movie=movie_response(movie),
+        )
+
+    place = match.place
+    if place is None:
+        place = await svc.places.get_by_id(match.place_id)
+    if place is None:
+        return None
+    return SessionMatchResponse(
+        kind="place",
+        match_id=match.id,
+        created_at=match.created_at,
+        category=(
+            "restaurants" if place.category == PlaceCategory.RESTAURANT else "entertainment"
+        ),
+        place=to_place_response(place),
+    )
 
 
 @router.get("/{session_id}/movies", response_model=list[MovieResponse])

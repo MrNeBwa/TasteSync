@@ -151,14 +151,14 @@ def test_place_response_always_exposes_a_cover_url() -> None:
     assert place_id is not None
 
     async def fetch() -> dict:
-        from app.api.places import place_response
+        from app.modules.places.schemas import to_place_response
         from app.repositories.place_repository import PlaceRepository
 
         try:
             async with AsyncSessionLocal() as session:
                 place = await PlaceRepository(session).get_by_id(place_id)
                 assert place is not None
-                return place_response(place).model_dump()
+                return to_place_response(place).model_dump()
         finally:
             await close_db()
 

@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
-from app.models.place import PlaceCategory
+from app.models.place import Place, PlaceCategory
 
 
 class PlaceResponse(BaseModel):
@@ -39,3 +39,30 @@ class PlaceMatchResponse(BaseModel):
     session_id: UUID
     place_id: UUID
     created_at: datetime
+
+
+def to_place_response(place: Place) -> PlaceResponse:
+    """Serialize a place the way every client expects it.
+
+    `tags` is stored as a `|`-joined string but is part of the response as a
+    list, and `cover_url` always points at the generated artwork so a client
+    never has to guess whether `image_url` is the only picture.
+    """
+    return PlaceResponse(
+        id=place.id,
+        name=place.name,
+        category=place.category,
+        address=place.address,
+        city=place.city,
+        latitude=place.latitude,
+        longitude=place.longitude,
+        image_url=place.image_url,
+        rating=place.rating,
+        price_level=place.price_level,
+        cuisine=place.cuisine,
+        tags=place.tags.split("|") if place.tags else [],
+        website=place.website,
+        phone=place.phone,
+        opening_hours=place.opening_hours,
+        cover_url=f"/api/places/{place.id}/cover.svg",
+    )

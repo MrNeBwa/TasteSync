@@ -105,7 +105,20 @@ async def join_room(
     except InvalidRoomStateError as exc:
         await session.rollback()
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return room_detail(room)
+
+    detail = room_detail(room)
+    # The joined member is not on the websocket yet (they connect once the
+    # lobby mounts), but everyone already there must see them immediately
+    # instead of waiting for the newcomer to toggle ready.
+    await manager.broadcast(
+        room.id,
+        {
+            "type": "ROOM_MEMBER_JOINED",
+            "room_id": str(room.id),
+            "payload": detail.model_dump(mode="json"),
+        },
+    )
+    return detail
 
 
 @router.get("/{room_id}", response_model=RoomDetailResponse)
