@@ -3,6 +3,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from app.models.place import Place, PlaceCategory
+from app.modules.places.photos import PhotoClient
 from app.providers.base import PlacesProvider, ProviderPlace
 from app.repositories.place_repository import PlaceRepository
 
@@ -21,9 +22,12 @@ class PlaceService:
         self,
         repository: PlaceRepository,
         provider: PlacesProvider,
+        *,
+        photo_client: PhotoClient | None = None,
     ) -> None:
         self.repository = repository
         self.provider = provider
+        self.photo_client = photo_client
 
     async def recommend(
         self,
@@ -65,6 +69,12 @@ class PlaceService:
             selected.append(place)
             if len(selected) >= limit:
                 break
+
+        if self.photo_client is not None:
+            # Real photos (Wikimedia, optional Google) are a bonus on top of
+            # the generated cover art. A lookup failure must never cost the
+            # user the feed, so enrichment exceptions are swallowed here.
+            await self.photo_client.enrich_places(selected)
         return selected
 
     async def _upsert(self, candidate: ProviderPlace) -> Place:

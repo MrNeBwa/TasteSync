@@ -34,6 +34,11 @@ class Place(Base):
     latitude: Mapped[float] = mapped_column(Float, nullable=False)
     longitude: Mapped[float] = mapped_column(Float, nullable=False)
     image_url: Mapped[str | None] = mapped_column(String(1000))
+    # Filled by the optional Google Places enrichment. The photo itself is
+    # streamed through /api/places/{id}/photo so the API key never leaks to
+    # the browser; these two columns are what the proxy needs to resolve it.
+    google_place_id: Mapped[str | None] = mapped_column(String(256))
+    google_photo_ref: Mapped[str | None] = mapped_column(String(256))
     rating: Mapped[float | None] = mapped_column(Float)
     price_level: Mapped[str | None] = mapped_column(String(20))
     cuisine: Mapped[str | None] = mapped_column(String(300))

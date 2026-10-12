@@ -26,9 +26,10 @@ class PlaceResponse(BaseModel):
     website: str | None
     phone: str | None
     opening_hours: str | None
-    # Always set. `image_url` is a real OpenStreetMap photo when one exists and
-    # is usually None, so the client must not treat it as the only picture
-    # source or most places render with nothing to show.
+    # Always set. `image_url` is a real photo when one exists (OpenStreetMap
+    # tag, Wikimedia Commons, or the Google photo proxy path) and is usually
+    # None, so the client must not treat it as the only picture source or most
+    # places render with nothing to show.
     cover_url: str
 
 
@@ -46,7 +47,9 @@ def to_place_response(place: Place) -> PlaceResponse:
 
     `tags` is stored as a `|`-joined string but is part of the response as a
     list, and `cover_url` always points at the generated artwork so a client
-    never has to guess whether `image_url` is the only picture.
+    never has to guess whether `image_url` is the only picture. `image_url`
+    carries a real photo when the enrichment found one and never exposes an
+    API key.
     """
     return PlaceResponse(
         id=place.id,
@@ -56,7 +59,11 @@ def to_place_response(place: Place) -> PlaceResponse:
         city=place.city,
         latitude=place.latitude,
         longitude=place.longitude,
-        image_url=place.image_url,
+        # A real external photo (OSM tag / Wikimedia) when one exists; a place
+        # resolved through Google Places has no public URL, so the client gets
+        # the same-origin proxy path that streams it without the API key.
+        image_url=place.image_url
+        or (f"/api/places/{place.id}/photo" if place.google_photo_ref else None),
         rating=place.rating,
         price_level=place.price_level,
         cuisine=place.cuisine,
