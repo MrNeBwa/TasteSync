@@ -43,3 +43,8 @@ PY
 
 cd android
 ./gradlew assembleRelease --console=plain
+
+if [ -f "app/build/outputs/apk/release/app-release.apk" ]; then
+  cp "app/build/outputs/apk/release/app-release.apk" "../../../movie-match.apk"
+  echo "Copied release APK to $(cd ../../.. && pwd)/movie-match.apk"
+fi
