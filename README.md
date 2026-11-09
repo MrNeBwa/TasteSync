@@ -2,11 +2,12 @@
 
 ## Features
 
-- Shared room voting with realtime lobby (WebSocket) and LIKE / DISLIKE / SKIP movie sessions.
-- Join rooms by 6-char code, by shareable invite link, or by scanning a QR code (web lobby renders it, mobile scans it).
-- Room & match history on the web dashboard and mobile profile.
-- Age/content gate with 18+ filtering; account settings incl. password change.
+- Shared room voting with realtime lobby (WebSocket) and LIKE / DISLIKE / SKIP sessions across **Movies**, **Restaurants / Cafes**, and **Entertainment / Places**.
+- Join rooms by 6-char code, by shareable invite link (`/join/CODE`), or by scanning a QR code (web lobby renders it, mobile scans it).
+- Room & match history on the web dashboard and mobile profile (tap any room card to re-enter).
+- Age/content gate with 18+ filtering; account settings incl. password change and runtime API Server URL override on mobile.
 - Dark mode / light mode toggle on both web and mobile (persisted).
+- Native match & invite sharing on web (`navigator.share` / clipboard) and mobile (`Share.share` + map deep links for places).
 - Web session keyboard shortcuts: `1` DISLIKE, `2` SKIP, `3` LIKE.
 - Content policy: matched movies respect both age of the participants and 18+ flag.
 

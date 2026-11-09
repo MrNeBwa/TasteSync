@@ -21,8 +21,9 @@ coverage
 # committing ~100 generated Gradle files.
 apps/mobile/android
 
-# Release signing material. Never commit a keystore or its passwords.
+# Release signing material and built APK artifacts. Never commit a keystore or its passwords.
 *.jks
 *.keystore
 keystore.properties
 apps/mobile/.secrets
+*.apk
