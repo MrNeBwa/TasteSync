@@ -5,6 +5,23 @@ cd "$(dirname "$0")/.."
 
 export ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
 export ANDROID_SDK_ROOT="$ANDROID_HOME"
+
+# Gradle 8.x supports up to JDK 21; if the system default Java is newer (e.g. 25/27),
+# automatically pick an installed JDK 21 or 17 when JAVA_HOME is not explicitly set.
+if [ -z "${JAVA_HOME:-}" ]; then
+  for candidate in \
+    /usr/lib/jvm/java-21-openjdk \
+    /usr/lib/jvm/java-17-openjdk \
+    "$HOME/.local/share/PrismLauncher/java/java-runtime-delta" \
+    "$HOME/.local/share/PrismLauncher/java/java-runtime-gamma"; do
+    if [ -x "$candidate/bin/javac" ]; then
+      export JAVA_HOME="$candidate"
+      export PATH="$JAVA_HOME/bin:$PATH"
+      break
+    fi
+  done
+fi
+
 SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
 
 # The NDK and CMake are only needed to compile the New Architecture C++ that

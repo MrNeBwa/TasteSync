@@ -49,11 +49,11 @@ class RoomService:
         room = await self.repository.get_by_code(code.strip().upper(), for_update=True)
         if room is None:
             raise RoomNotFoundError
-        if room.status not in {RoomStatus.WAITING, RoomStatus.READY}:
-            raise InvalidRoomStateError("Room is no longer accepting members")
         membership = await self.repository.get_membership(room.id, user_id)
         if membership is not None:
-            raise AlreadyMemberError
+            return room
+        if room.status not in {RoomStatus.WAITING, RoomStatus.READY}:
+            raise InvalidRoomStateError("Room is no longer accepting members")
         user = await self.repository.get_user(user_id)
         if user is None:
             raise UserNotFoundError(user_id)

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { onTokenRefreshed, request, register as registerApi, type User } from '../lib/api';
 import { clearAuth, loadAuth, saveAuth, saveUser } from '../lib/auth';
+import { loadSavedApiUrl, loadSavedLocation } from '../lib/config';
 
 type AuthContextValue = {
   loading: boolean;
@@ -22,6 +23,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     (async () => {
       try {
+        await Promise.all([loadSavedApiUrl(), loadSavedLocation()]);
         const stored = await loadAuth();
         if (!stored) return;
         const me = await request<User>('/auth/me', {}, stored.access);

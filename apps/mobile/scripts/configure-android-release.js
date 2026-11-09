@@ -22,6 +22,7 @@ const path = require('path');
 
 const root = path.resolve(__dirname, '..');
 const buildGradle = path.join(root, 'android', 'app', 'build.gradle');
+const manifestFile = path.join(root, 'android', 'app', 'src', 'main', 'AndroidManifest.xml');
 const propsFile = path.join(root, '.secrets', 'keystore.properties');
 
 function readProperties(file) {
@@ -156,3 +157,13 @@ source = source.slice(0, releaseBodyStart) + rebuiltBody + source.slice(nextBloc
 
 fs.writeFileSync(buildGradle, source);
 console.log(`[android-signing] release build will use alias "${cfg.keyAlias}".`);
+
+// Ensure release APK allows HTTP/WS connections to local LAN API servers
+if (fs.existsSync(manifestFile)) {
+  let manifest = fs.readFileSync(manifestFile, 'utf8');
+  if (!manifest.includes('android:usesCleartextTraffic')) {
+    manifest = manifest.replace('<application', '<application android:usesCleartextTraffic="true"');
+    fs.writeFileSync(manifestFile, manifest);
+    console.log('[android-signing] enabled android:usesCleartextTraffic="true" in AndroidManifest.xml.');
+  }
+}

@@ -1,5 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
-import { API_URL } from './config';
+import { getApiUrl } from './config';
 import type { User } from './api';
 
 const TOKEN_KEY = 'movie_match_access';
@@ -9,7 +9,7 @@ const USER_KEY = 'movie_match_user';
 export async function refreshAccessToken(): Promise<string> {
   const refresh = await SecureStore.getItemAsync(REFRESH_KEY);
   if (!refresh) throw new Error('No refresh token');
-  const res = await fetch(`${API_URL}/auth/refresh`, {
+  const res = await fetch(`${getApiUrl()}/auth/refresh`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ refresh_token: refresh }),

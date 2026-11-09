@@ -97,7 +97,7 @@ class MovieRepository:
         )
         result = await self.session.execute(delete(Movie).where(Movie.provider == provider))
         await self.session.flush()
-        return int(result.rowcount or 0)
+        return int(getattr(result, "rowcount", 0) or 0)
 
     async def list_popular(self, *, limit: int = 30, include_adult: bool = True) -> list[Movie]:
         stmt = select(Movie).options(selectinload(Movie.genres).selectinload(MovieGenre.genre))

@@ -230,7 +230,7 @@ class OverpassProvider(PlacesProvider):
         # as a bare node and as a tagged way/relation. Those share a name and a
         # location but not a provider_id, so keying on provider_id alone lets the
         # same place reach the user twice and then 409s as "already voted".
-        seen_places: set[tuple[str, int, int]] = set()
+        seen_places: set[tuple[str, float, float]] = set()
         for element in payload.get("elements", []):
             mapped = self._map_element(element)
             if mapped is None or mapped.provider_id in seen:

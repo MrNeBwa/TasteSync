@@ -1,8 +1,11 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import QRCode from 'qrcode';
 import { apiFetch as request } from '../shared/api/client';
 import { getRuntimeWsBaseUrl, resolveApiAssetUrl } from '../shared/api/config';
 import { nextStepAfterVote } from '../shared/lib/feed';
+import { buildJoinUrl, extractRoomCode } from '../shared/lib/invite';
 import { clearTokens, getAccessToken, saveTokens } from '../shared/lib/storage';
+import { applyTheme, persistTheme, readStoredTheme, type Theme } from '../shared/lib/theme';
 import { getYouTubeEmbedUrl } from '../shared/lib/youtube';
 import { getCurrentCity, geocodeCity, isGeoSupported } from '../shared/lib/geo';
 import { placesApi } from '../features/places/api';
@@ -21,7 +24,9 @@ const FALLBACK_PALETTE: Palette = {
 };
 
 function App() {
-  const [screen, setScreen] = useState<Screen>(() => getAccessToken() ? 'home' : 'landing');
+  const initialInvite = useMemo(() => extractRoomCode(window.location.pathname, window.location.search), []);
+  const [pendingInvite, setPendingInvite] = useState<string | null>(initialInvite);
+  const [screen, setScreen] = useState<Screen>(() => getAccessToken() ? 'home' : initialInvite ? 'auth' : 'landing');
   const [token, setToken] = useState(() => getAccessToken());
   const [user, setUser] = useState<User | null>(null);
   const [authMode, setAuthMode] = useState<AuthMode>('login');
@@ -33,8 +38,31 @@ function App() {
   const [ageGateOpen, setAgeGateOpen] = useState(false);
   const [ageSaving, setAgeSaving] = useState(false);
   const [location, setLocation] = useState<UserLocation | null>(null);
+  const [theme, setTheme] = useState<Theme>(readStoredTheme);
+
+  const toggleTheme = () => setTheme(current => current === 'light' ? 'dark' : 'light');
+
+  useEffect(() => {
+    applyTheme(theme);
+    persistTheme(theme);
+  }, [theme]);
 
   const authenticated = Boolean(token && user);
+
+  useEffect(() => {
+    if (!authenticated || !pendingInvite || !token) return;
+    const codeToJoin = pendingInvite;
+    setPendingInvite(null);
+    window.history.replaceState({}, '', '/');
+    request<Room>('/rooms/join', { method: 'POST', body: JSON.stringify({ code: codeToJoin }) }, token)
+      .then((joined) => {
+        setRoom(joined);
+        setScreen('room');
+      })
+      .catch((e) => {
+        setError(e instanceof Error ? e.message : 'Не удалось войти по приглашению');
+      });
+  }, [authenticated, pendingInvite, token]);
 
   useEffect(() => {
     if (!token) {
@@ -192,11 +220,11 @@ function App() {
       <div className="grain" />
       {screen === 'landing' && <Landing onAuth={(mode) => { setError(''); setAuthMode(mode); setScreen('auth'); }} />}
       {screen === 'auth' && <Auth mode={authMode} error={error} onModeChange={(mode) => { setError(''); setAuthMode(mode); }} onBack={() => { setError(''); setScreen('landing'); }} onSubmit={handleAuth} />}
-      {authenticated && screen === 'home' && <Home user={user} token={token} onOpenSettings={() => setScreen('settings')} onRoom={(r) => { setRoom(r); setScreen('room'); }} onError={setError} error={error} />}
+      {authenticated && screen === 'home' && <Home user={user} token={token} theme={theme} onToggleTheme={toggleTheme} onOpenSettings={() => setScreen('settings')} onRoom={(r) => { setRoom(r); setScreen('room'); }} onError={setError} error={error} />}
       {authenticated && screen === 'room' && room && <RoomLobby user={user} token={token} room={room} onBack={() => setScreen('home')} onRoomChange={setRoom} onStarted={(s) => { setSession(s); setScreen('session'); }} onError={setError} location={location} onLocation={setLocation} />}
       {authenticated && screen === 'session' && session && room && <SearchSession token={token} session={session} room={room} onMatch={(result) => { setMatchResult(result); setScreen('match'); }} onFinish={() => { setScreen('home'); setSession(null); }} location={location} onLocation={setLocation} />}
       {authenticated && screen === 'match' && room && <MatchScreen result={matchResult} onBack={() => setScreen('home')} />}
-      {authenticated && screen === 'settings' && <Settings user={user} token={token} onBack={() => setScreen('home')} onLogout={logout} onEditAge={() => setAgeGateOpen(true)} />}
+      {authenticated && screen === 'settings' && <Settings user={user} theme={theme} onToggleTheme={toggleTheme} token={token} onBack={() => setScreen('home')} onLogout={logout} onEditAge={() => setAgeGateOpen(true)} />}
       {error && screen === 'home' && <div className="toast" role="alert">{error}<button onClick={() => setError('')}>×</button></div>}
       {authenticated && ageGateOpen && <AgeGate user={user} saving={ageSaving} required={!user?.birth_date} onSave={saveBirthDate} onClose={() => !user?.birth_date ? undefined : setAgeGateOpen(false)} />}
     </div>
@@ -252,7 +280,7 @@ function Auth({ mode, onModeChange, onBack, onSubmit, error }: { mode: AuthMode;
   </Shell>;
 }
 
-function Home({ user, token, onOpenSettings, onRoom, onError, error }: { user: User | null; token: string; onOpenSettings: () => void; onRoom: (r: Room) => void; onError: (e: string) => void; error: string }) {
+function Home({ user, token, theme, onToggleTheme, onOpenSettings, onRoom, onError, error }: { user: User | null; token: string; theme: Theme; onToggleTheme: () => void; onOpenSettings: () => void; onRoom: (r: Room) => void; onError: (e: string) => void; error: string }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [joinOpen, setJoinOpen] = useState(false);
   const [name, setName] = useState('Movie Night');
@@ -271,10 +299,10 @@ function Home({ user, token, onOpenSettings, onRoom, onError, error }: { user: U
       onError(e instanceof Error ? e.message : 'Ошибка создания комнаты');
     } finally { setLoading(false); }
   };
-  const join = async () => {
+  const join = async (targetCode = code) => {
     setLoading(true);
     try {
-      const joined = await request<Room>('/rooms/join', { method: 'POST', body: JSON.stringify({ code: code.trim().toUpperCase() }) }, token);
+      const joined = await request<Room>('/rooms/join', { method: 'POST', body: JSON.stringify({ code: targetCode.trim().toUpperCase() }) }, token);
       onRoom(joined);
       setJoinOpen(false);
     } catch (e) {
@@ -289,7 +317,7 @@ function Home({ user, token, onOpenSettings, onRoom, onError, error }: { user: U
       .finally(() => active && setHistoryLoading(false));
     return () => { active = false; };
   }, [token]);
-  return <Shell eyebrow="YOUR DASHBOARD" title={<>Выбираем <span>вместе.</span></>} subtitle={`${user?.username ?? 'Пользователь'}, создайте новую комнату или присоединитесь к друзьям.`} actions={<button className="avatar-button" onClick={onOpenSettings}>{(user?.username ?? 'U').slice(0, 1).toUpperCase()}</button>}>
+  return <Shell eyebrow="YOUR DASHBOARD" title={<>Выбираем <span>вместе.</span></>} subtitle={`${user?.username ?? 'Пользователь'}, создайте новую комнату или присоединитесь к друзьям.`} actions={<><button className="theme-toggle" onClick={onToggleTheme} aria-label="Переключить тему" title="Тема">{theme === 'light' ? '☾' : '☀'}</button><button className="avatar-button" onClick={onOpenSettings}>{(user?.username ?? 'U').slice(0, 1).toUpperCase()}</button></>}>
     <div className="dashboard-grid">
       <button className="big-action dark" onClick={() => setCreateOpen(true)}><span className="action-number">01</span><span className="action-icon">＋</span><strong>Создать комнату</strong><small>Начните новый movie night</small><em>→</em></button>
       <button className="big-action yellow" onClick={() => setJoinOpen(true)}><span className="action-number">02</span><span className="action-icon">⌂</span><strong>Войти в комнату</strong><small>У вас уже есть код?</small><em>→</em></button>
@@ -298,10 +326,10 @@ function Home({ user, token, onOpenSettings, onRoom, onError, error }: { user: U
     {error && <div className="form-error dashboard-error">{error}</div>}
     <div className="history-section">
       <div className="history-head"><span className="eyebrow">ИСТОРИЯ КОМНАТ</span><h2>Что вы уже смотрели.</h2></div>
-      {historyLoading ? <div className="loading-card history-loading">Загружаем историю…</div> : history.length === 0 ? <div className="empty-card history-empty"><span className="eyebrow">ПОКА ПУСТО</span><strong>Завершите первую сессию — matched-фильмы появятся здесь.</strong></div> : <div className="history-grid">{history.map(item => <div className="history-card" key={item.room_id}><div className="history-card-top"><strong>{item.room_name}</strong><span className="code-pill small">{item.room_code}</span></div><div className="history-card-meta"><span>{new Date(item.created_at).toLocaleDateString('ru-RU')}</span><span>{item.member_count} чел.</span><span>{item.matched_movies.length > 0 ? `${item.matched_movies.length} match` : item.room_status.toLowerCase()}</span></div>{item.matched_movies.length > 0 && <div className="history-posters">{item.matched_movies.slice(0, 3).map(movie => <div className="history-poster" key={movie.id} title={movie.title} style={{ backgroundImage: movie.poster_url ? `url(${movie.poster_url})` : 'none' }}><span>{!movie.poster_url ? movie.title : ''}</span></div>)}</div>}</div>)}</div>}
+      {historyLoading ? <div className="loading-card history-loading">Загружаем историю…</div> : history.length === 0 ? <div className="empty-card history-empty"><span className="eyebrow">ПОКА ПУСТО</span><strong>Завершите первую сессию — matched-фильмы появятся здесь.</strong></div> : <div className="history-grid">{history.map(item => <div className="history-card" key={item.room_id} onClick={() => void join(item.room_code)} style={{ cursor: 'pointer' }} title="Открыть комнату"><div className="history-card-top"><strong>{item.room_name}</strong><span className="code-pill small">{item.room_code}</span></div><div className="history-card-meta"><span>{new Date(item.created_at).toLocaleDateString('ru-RU')}</span><span>{item.member_count} чел.</span><span>{item.matched_movies.length > 0 ? `${item.matched_movies.length} match` : item.room_status.toLowerCase()}</span></div>{item.matched_movies.length > 0 && <div className="history-posters">{item.matched_movies.slice(0, 3).map(movie => <div className="history-poster" key={movie.id} title={movie.title} style={{ backgroundImage: movie.poster_url ? `url(${movie.poster_url})` : 'none' }}><span>{!movie.poster_url ? movie.title : ''}</span></div>)}</div>}</div>)}</div>}
     </div>
     {createOpen && <Modal title="Новая комната" onClose={() => setCreateOpen(false)}><label>Название<input autoFocus value={name} onChange={e => setName(e.target.value)} /></label><button disabled={loading || !name.trim()} className="btn btn-primary wide" onClick={create}>{loading ? 'Создаём…' : 'Создать комнату →'}</button></Modal>}
-    {joinOpen && <Modal title="Войти по коду" onClose={() => setJoinOpen(false)}><label>Код комнаты<input autoFocus value={code} onChange={e => setCode(e.target.value.toUpperCase())} maxLength={8} placeholder="K7P2QA" /></label><button disabled={loading || code.length < 4} className="btn btn-primary wide" onClick={join}>{loading ? 'Входим…' : 'Войти →'}</button></Modal>}
+    {joinOpen && <Modal title="Войти по коду" onClose={() => setJoinOpen(false)}><label>Код комнаты<input autoFocus value={code} onChange={e => setCode(e.target.value.toUpperCase())} maxLength={8} placeholder="K7P2QA" /></label><button disabled={loading || code.length < 4} className="btn btn-primary wide" onClick={() => void join()}>{loading ? 'Входим…' : 'Войти →'}</button></Modal>}
   </Shell>;
 }
 
@@ -364,6 +392,25 @@ function RoomLobby({ user, token, room, onBack, onRoomChange, onStarted, onError
     finally { setStarting(false); }
   };
   const [copied, setCopied] = useState<'ok' | 'fail' | null>(null);
+  const [inviteCopied, setInviteCopied] = useState(false);
+  const [qrDataUrl, setQrDataUrl] = useState('');
+  const inviteUrl = useMemo(() => buildJoinUrl(room.code, window.location.origin), [room.code]);
+  useEffect(() => {
+    let active = true;
+    QRCode.toDataURL(inviteUrl, { margin: 1, width: 220 })
+      .then((url) => { if (active) setQrDataUrl(url); })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [inviteUrl]);
+  const copyInvite = async () => {
+    try {
+      await navigator.clipboard.writeText(inviteUrl);
+      setInviteCopied(true);
+      window.setTimeout(() => setInviteCopied(false), 2000);
+    } catch {
+      setCopied('fail');
+    }
+  };
   const copyCode = async () => {
     try {
       // navigator.clipboard is undefined on an insecure origin, and the
@@ -409,9 +456,19 @@ function RoomLobby({ user, token, room, onBack, onRoomChange, onStarted, onError
       <LocationPanel location={location} onLocation={onLocation} />
       {!location && <p className="hint">Заведения ищем рядом с вами — разрешите геолокацию или укажите город. Кнопка «Готов» откроется после этого.</p>}
     </div>}
-    <div className="members-list">{room.members.map(m => <div className="member-row" key={m.user_id}><div className="member-avatar">{m.username.slice(0, 1).toUpperCase()}</div><div><strong>{m.username}{m.user_id === user?.id ? ' (вы)' : ''}</strong><small>{m.role === 'OWNER' ? 'owner' : m.is_ready ? 'готов' : 'ожидает'}</small></div><span className={`ready-badge ${m.is_ready ? 'on' : ''}`}>{m.is_ready ? 'READY' : '—'}</span></div>)}</div>
-    <div className="room-footer"><button className={`btn ${me?.is_ready ? 'btn-dark' : 'btn-primary'}`} onClick={setReady} disabled={!canReady}>{!canReady ? 'Сначала — геолокация' : me?.is_ready ? 'Я готов ✓' : 'Готов'}</button><button disabled={!isOwner || !allReady || starting} className="btn btn-dark" onClick={start}>{starting ? 'Запуск…' : isOwner ? 'Начать сессию →' : 'Ждём владельца'}</button></div>
-    {!isOwner && <p className="hint">Владелец комнаты выбирает категорию колесом и запускает сессию после того, как все нажмут «Готов».</p>}
+    <div className="lobby-grid" style={{ marginTop: 20 }}>
+      <div>
+        <div className="members-list" style={{ marginTop: 0 }}>{room.members.map(m => <div className="member-row" key={m.user_id}><div className="member-avatar">{m.username.slice(0, 1).toUpperCase()}</div><div><strong>{m.username}{m.user_id === user?.id ? ' (вы)' : ''}</strong><small>{m.role === 'OWNER' ? 'owner' : m.is_ready ? 'готов' : 'ожидает'}</small></div><span className={`ready-badge ${m.is_ready ? 'on' : ''}`}>{m.is_ready ? 'READY' : '—'}</span></div>)}</div>
+        <div className="room-footer"><button className={`btn ${me?.is_ready ? 'btn-dark' : 'btn-primary'}`} onClick={setReady} disabled={!canReady}>{!canReady ? 'Сначала — геолокация' : me?.is_ready ? 'Я готов ✓' : 'Готов'}</button><button disabled={!isOwner || !allReady || starting} className="btn btn-dark" onClick={start}>{starting ? 'Запуск…' : isOwner ? 'Начать сессию →' : 'Ждём владельца'}</button></div>
+        {!isOwner && <p className="hint">Владелец комнаты выбирает категорию колесом и запускает сессию после того, как все нажмут «Готов».</p>}
+      </div>
+      <div className="qr-panel">
+        <span className="eyebrow">ПРИГЛАШЕНИЕ ПО QR</span>
+        {qrDataUrl ? <img className="qr-image" src={qrDataUrl} alt="QR-код для входа в комнату" /> : <div className="qr-placeholder">…</div>}
+        <button className="btn btn-ghost wide" onClick={() => void copyInvite()}>{inviteCopied ? 'Ссылка скопирована ✓' : 'Скопировать ссылку'}</button>
+        <p className="hint">Отсканируйте из мобильного приложения или отправьте ссылку друзьям.</p>
+      </div>
+    </div>
   </Shell>;
 }
 
@@ -708,6 +765,7 @@ function MatchScreen({ result, onBack }: { result: MatchResult | null; onBack: (
   const movie = result?.kind === 'movie' ? result.movie : null;
   const place = result?.kind === 'place' ? result.place : null;
   const [palette, setPalette] = useState<Palette>(FALLBACK_PALETTE);
+  const [shared, setShared] = useState(false);
   useEffect(() => { if (movie?.poster_url) extractPalette(movie.poster_url).then(setPalette).catch(() => undefined); }, [movie?.poster_url]);
 
   const primary = movie ? palette.primary : place?.category === 'RESTAURANT' ? '#efbd42' : '#f06aa7';
@@ -720,6 +778,29 @@ function MatchScreen({ result, onBack }: { result: MatchResult | null; onBack: (
   // Same precedence as PlaceCard: a real OSM photo when one exists, generated
   // artwork otherwise. The icon standin only survives if both fail.
   const placeCover = place ? resolveApiAssetUrl(place.image_url) ?? resolveApiAssetUrl(place.cover_url) : null;
+
+  const shareMatch = async () => {
+    const title = place ? place.name : (movie?.title ?? 'Movie Match');
+    const text = place
+      ? `Мы выбрали место в Movie Match: ${place.name}${place.address ? ` (${place.address})` : ''}`
+      : `Мы выбрали фильм в Movie Match: ${movie?.title ?? 'Ваш фильм'}`;
+    const url = place ? (mapUrl ?? window.location.origin) : (movie?.trailer_url ?? window.location.origin);
+    try {
+      if (navigator.share) {
+        await navigator.share({ title, text, url });
+        return;
+      }
+    } catch {
+      // Fall back to clipboard below.
+    }
+    try {
+      await navigator.clipboard.writeText(`${text} — ${url}`);
+      setShared(true);
+      window.setTimeout(() => setShared(false), 2000);
+    } catch {
+      // Ignore clipboard failure
+    }
+  };
 
   return <div className="match-page" style={style}>
     <div className="match-glow" />
@@ -744,13 +825,17 @@ function MatchScreen({ result, onBack }: { result: MatchResult | null; onBack: (
               <div className="place-actions wide">
                 {(place.website || place.phone) && <a className="btn btn-dark" href={place.website ?? `tel:${place.phone}`} target={place.website ? '_blank' : undefined} rel="noreferrer">Сайт ↗</a>}
                 {mapUrl && <a className="btn btn-primary" href={mapUrl} target="_blank" rel="noreferrer">Открыть на карте →</a>}
+                <button className="btn btn-ghost" onClick={() => void shareMatch()}>{shared ? 'Скопировано ✓' : 'Поделиться ↗'}</button>
               </div>
             </> : <>
               <span className="match-kicker">TONIGHT’S PICK</span>
               <h2>{movie?.title ?? 'Ваш фильм'}</h2>
               <p>{movie?.overview ?? 'Совпадение найдено всеми участниками комнаты.'}</p>
               <div className="tag-row">{movie?.genres.slice(0, 4).map(g => <span className="tag dark" key={g.id}>{g.name}</span>)}</div>
-              {movie?.trailer_url && <a className="btn btn-primary wide" href={movie.trailer_url} target="_blank" rel="noreferrer">Открыть трейлер →</a>}
+              <div className="place-actions wide">
+                {movie?.trailer_url && <a className="btn btn-primary" href={movie.trailer_url} target="_blank" rel="noreferrer">Открыть трейлер →</a>}
+                <button className="btn btn-ghost" onClick={() => void shareMatch()}>{shared ? 'Скопировано ✓' : 'Поделиться ↗'}</button>
+              </div>
             </>}
           </div>
         </div>
@@ -760,7 +845,7 @@ function MatchScreen({ result, onBack }: { result: MatchResult | null; onBack: (
   </div>;
 }
 
-function Settings({ user, token, onBack, onLogout, onEditAge }: { user: User | null; token: string; onBack: () => void; onLogout: () => void; onEditAge: () => void }) {
+function Settings({ user, theme, onToggleTheme, token, onBack, onLogout, onEditAge }: { user: User | null; theme: Theme; onToggleTheme: () => void; token: string; onBack: () => void; onLogout: () => void; onEditAge: () => void }) {
   const age = user?.birth_date ? calculateAge(user.birth_date) : null;
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [passwordError, setPasswordError] = useState('');
@@ -770,6 +855,7 @@ function Settings({ user, token, onBack, onLogout, onEditAge }: { user: User | n
     <div className="settings-grid">
       <button className="settings-row" onClick={onEditAge}>Возраст и цензура <span>{age === null ? 'указать →' : `${age} лет →`}</span></button>
       <button className="settings-row" onClick={() => { setPasswordDone(false); setPasswordError(''); setPasswordOpen(true); }}>Сменить пароль <span>→</span></button>
+      <button className="settings-row" onClick={onToggleTheme}>Тема оформления <span>{theme === 'light' ? 'светлая · переключить' : 'тёмная · переключить'}</span></button>
       <button className="settings-row danger" onClick={onLogout}>Выйти из аккаунта <span>→</span></button>
     </div>
     {passwordOpen && <PasswordModal token={token} onClose={() => setPasswordOpen(false)} onError={setPasswordError} onSuccess={() => { setPasswordDone(true); setPasswordOpen(false); }} />}
