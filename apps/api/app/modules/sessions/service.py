@@ -4,6 +4,8 @@ from datetime import date, datetime, timezone
 from uuid import UUID, uuid4
 
 from app.core.config import CATALOG_EMPTY_MESSAGE
+from app.models.match import Match
+from app.models.place_match import PlaceMatch
 from app.models.room import RoomStatus
 from app.models.session import MovieSession, SessionStatus
 from app.models.vote import VoteValue
@@ -147,6 +149,26 @@ class MovieSessionService:
             exploration_ratio=exploration_ratio,
             include_adult=adult_allowed,
         )
+
+    async def latest_match(
+        self,
+        *,
+        session_id: UUID,
+    ) -> tuple[str, Match | PlaceMatch] | None:
+        """Return the newest match of a session as ``(kind, match)``.
+
+        Polling clients use this to discover a match they did not hear about in
+        realtime. Movie and place matches live in separate tables, so the most
+        recent row across both flows wins.
+        """
+        candidates: list[tuple[str, Match | PlaceMatch]] = [
+            ("movie", match) for match in await self.sessions.list_matches(session_id=session_id)
+        ] + [
+            ("place", match) for match in await self.places.list_matches(session_id=session_id)
+        ]
+        if not candidates:
+            return None
+        return max(candidates, key=lambda item: item[1].created_at)
 
     async def vote(
         self,

@@ -69,3 +69,21 @@ with real data (posters, trailers) — or just restart the API. If both sources 
 catalog stays empty, `/health` reports `degraded`, and
 `GET /api/sessions/{id}/movies` answers `503` with an actionable message rather than an
 empty list, so the web UI never claims the selection simply ran out.
+
+### Place photos (food & venues)
+
+Food and venue cards show a real photo when one can be found, and otherwise a
+generated cover. Sources are tried in order:
+
+1. an OpenStreetMap `image` tag (rare);
+2. **Wikimedia Commons** — free, no key. A search by place name + city, accepted
+   only when the file title actually contains the place's name, so a same-named
+   venue in another city is ignored;
+3. **Google Places API (New)** — optional. Set `GOOGLE_PLACES_API_KEY` in
+   `apps/api/.env` (see `.env.example`) to use the venue's own Google listing
+   photo. The photo is streamed through `/api/places/{id}/photo`, so the key
+   never reaches the browser.
+
+Every place always has a generated `cover_url`, so a missing photo degrades to
+artwork rather than a broken image.
+

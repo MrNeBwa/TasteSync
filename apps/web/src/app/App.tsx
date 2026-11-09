@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { apiFetch as request } from '../shared/api/client';
-import { getRuntimeWsBaseUrl } from '../shared/api/config';
+import { getRuntimeWsBaseUrl, resolveApiAssetUrl } from '../shared/api/config';
 import { nextStepAfterVote } from '../shared/lib/feed';
 import { clearTokens, getAccessToken, saveTokens } from '../shared/lib/storage';
 import { getYouTubeEmbedUrl } from '../shared/lib/youtube';
@@ -11,7 +11,7 @@ import { describeMovieFeedError } from '../features/movies/api';
 import { ModeCircle, MODE_OPTIONS } from '../components/ModeCircle';
 import { PlaceCard } from '../components/PlaceCard';
 import { PlaceCategoryIcon, SearchModeIcon } from '../components/icons';
-import type { AuthMode, Coords, Genre, HistoryItem, MatchResult, Movie, Palette, Place, Room, RoomMember, Screen, SearchMode, Session, User, UserLocation, VoteValue } from '../shared/types/domain';
+import type { AuthMode, Coords, Genre, HistoryItem, MatchResult, Movie, Palette, Place, Room, RoomMember, Screen, SearchMode, Session, SessionMatch, User, UserLocation, VoteValue } from '../shared/types/domain';
 
 const FALLBACK_PALETTE: Palette = {
   primary: '#efbd42',
@@ -63,19 +63,19 @@ function App() {
   }, [token]);
 
   useEffect(() => {
-    if (!room || !token || !['room', 'session', 'match'].includes(screen)) return;
+    const roomId = room?.id;
+    if (!roomId || !token || !['room', 'session', 'match'].includes(screen)) return;
     const wsBase = getRuntimeWsBaseUrl();
     let closed = false;
-    const ws = new WebSocket(`${wsBase}/ws/rooms/${room.id}?token=${encodeURIComponent(token)}`);
+    const ws = new WebSocket(`${wsBase}/ws/rooms/${roomId}?token=${encodeURIComponent(token)}`);
     ws.onmessage = (event) => {
       try {
         if (closed) return;
         const msg = JSON.parse(event.data) as { type: string; payload?: unknown };
-        if (msg.type === 'ROOM_READY_CHANGED' && msg.payload && typeof msg.payload === 'object') setRoom(msg.payload as Room);
-        if (msg.type === 'ROOM_TASK_CHANGED' && msg.payload && typeof msg.payload === 'object') setRoom(msg.payload as Room);
+        if ((msg.type === 'ROOM_READY_CHANGED' || msg.type === 'ROOM_TASK_CHANGED' || msg.type === 'ROOM_MEMBER_JOINED') && msg.payload && typeof msg.payload === 'object') setRoom(msg.payload as Room);
         if (msg.type === 'SESSION_STARTED' && msg.payload && typeof msg.payload === 'object') {
           const payload = msg.payload as { session_id: string; room_id?: string; created_at?: string };
-          setSession({ id: payload.session_id, room_id: payload.room_id ?? room.id, status: 'ACTIVE', created_at: payload.created_at ?? new Date().toISOString() });
+          setSession({ id: payload.session_id, room_id: payload.room_id ?? roomId, status: 'ACTIVE', created_at: payload.created_at ?? new Date().toISOString() });
           setScreen('session');
         }
         if (msg.type === 'MATCH_FOUND' && msg.payload && typeof msg.payload === 'object') {
@@ -90,11 +90,11 @@ function App() {
               }))
               .catch(() => undefined);
           } else if (payload.movie_id) {
-            request<Movie[]>(`/sessions/${payload.session_id}/movies?limit=50`, {}, token)
-              .then(movies => {
-                const movie = movies.find(item => item.id === payload.movie_id) ?? null;
-                setMatchResult(movie ? { kind: 'movie', category: 'movies', movie } : null);
-              })
+            // The session feed refuses requests once it is MATCHED, so the
+            // matched movie has to be fetched by id instead of searched for in
+            // a fresh batch.
+            request<Movie>(`/movies/${payload.movie_id}`, {}, token)
+              .then(movie => setMatchResult({ kind: 'movie', category: 'movies', movie }))
               .catch(() => undefined);
           }
         }
@@ -105,7 +105,23 @@ function App() {
     };
     ws.onerror = () => { if (!closed) setError('Realtime-соединение с комнатой недоступно.'); };
     return () => { closed = true; ws.close(); };
-  }, [room, token, screen]);
+  }, [room?.id, token, screen]);
+
+  // The websocket is the fast path, but it is not guaranteed: a member can be
+  // reconnecting exactly when the owner presses "start", and the browser tab
+  // may have been asleep. The lobby polls GET /rooms/{id} every 5s, so entering
+  // the session from `active_session_id` keeps everyone in sync even when
+  // SESSION_STARTED was missed.
+  useEffect(() => {
+    if (screen !== 'room' || !room?.active_session_id) return;
+    setSession({
+      id: room.active_session_id,
+      room_id: room.id,
+      status: 'ACTIVE',
+      created_at: room.created_at,
+    });
+    setScreen('session');
+  }, [screen, room?.id, room?.active_session_id, room?.created_at]);
 
   useEffect(() => {
     if (!room || !token) return;
@@ -208,17 +224,27 @@ function Auth({ mode, onModeChange, onBack, onSubmit, error }: { mode: AuthMode;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const submit = async (e: FormEvent) => {
+  const submit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setLoading(true);
-    await onSubmit(mode, { username, email, password });
+    // Read the actual field values from the DOM rather than from React state:
+    // password managers/autofill can fill the inputs without firing the React
+    // onChange handlers, which used to send an empty {email:"", password:""}
+    // body and produce an opaque 422 on devices where the user relied on
+    // autofill. FormData sees what is really in the inputs.
+    const form = new FormData(e.currentTarget);
+    await onSubmit(mode, {
+      username: String(form.get('username') ?? username),
+      email: String(form.get('email') ?? email).trim(),
+      password: String(form.get('password') ?? password),
+    });
     setLoading(false);
   };
   return <Shell eyebrow="ACCOUNT" title={mode === 'login' ? <>С возвращением.</> : <>Добро пожаловать<br />в <span>Movie Match.</span></>} subtitle={mode === 'login' ? 'Войдите, чтобы вернуться к своим комнатам.' : 'Создайте аккаунт и начните искать фильмы вместе.'} actions={<button className="nav-link" onClick={onBack}>← назад</button>}>
     <form className="auth-card" onSubmit={submit}>
-      {mode === 'register' && <label>Имя<input value={username} onChange={e => setUsername(e.target.value)} minLength={3} placeholder="nebwa" required /></label>}
-      <label>Email<input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" required /></label>
-      <label>Пароль<input type="password" value={password} onChange={e => setPassword(e.target.value)} minLength={8} placeholder="••••••••" required /></label>
+      {mode === 'register' && <label>Имя<input name="username" autoComplete="nickname" value={username} onChange={e => setUsername(e.target.value)} minLength={3} placeholder="nebwa" required /></label>}
+      <label>Email<input name="email" type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" required /></label>
+      <label>Пароль<input name="password" type="password" autoComplete={mode === 'register' ? 'new-password' : 'current-password'} value={password} onChange={e => setPassword(e.target.value)} minLength={mode === 'register' ? 8 : undefined} placeholder="••••••••" required /></label>
       {error && <div className="form-error">{error}</div>}
       <button className="btn btn-primary wide" type="submit" disabled={loading}>{loading ? 'Подключаем…' : mode === 'login' ? 'Войти' : 'Создать аккаунт'} <span>→</span></button>
       <button type="button" className="switch-link" onClick={() => onModeChange(mode === 'login' ? 'register' : 'login')}>{mode === 'login' ? 'Нет аккаунта? Зарегистрироваться' : 'Уже есть аккаунт? Войти'}</button>
@@ -290,6 +316,22 @@ function RoomLobby({ user, token, room, onBack, onRoomChange, onStarted, onError
   const taskSeqRef = useRef(0);
   useEffect(() => () => window.clearTimeout(taskTimerRef.current), []);
   useEffect(() => { setPendingTask(room.task ?? 'movies'); }, [room.task]);
+  // A member who joins stays invisible to everyone else until they toggle
+  // ready, because that is the only roster change the API broadcasts. Poll the
+  // room so the member list and the "all ready" gate stay honest.
+  useEffect(() => {
+    let active = true;
+    const refresh = async () => {
+      try {
+        const fresh = await request<Room>(`/rooms/${room.id}`, {}, token);
+        if (active) onRoomChange(fresh);
+      } catch {
+        // Transient errors are ignored; the next tick retries.
+      }
+    };
+    const timer = window.setInterval(refresh, 5000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [room.id, token, onRoomChange]);
   const setTask = (next: SearchMode) => {
     const seq = ++taskSeqRef.current;
     setPendingTask(next);
@@ -321,12 +363,38 @@ function RoomLobby({ user, token, room, onBack, onRoomChange, onStarted, onError
     } catch (e) { onError(e instanceof Error ? e.message : 'Не удалось начать сессию'); }
     finally { setStarting(false); }
   };
-  const copyCode = () => navigator.clipboard?.writeText(room.code).catch(() => undefined);
+  const [copied, setCopied] = useState<'ok' | 'fail' | null>(null);
+  const copyCode = async () => {
+    try {
+      // navigator.clipboard is undefined on an insecure origin, and the
+      // permission is rejected outright when the page is not focused.
+      await navigator.clipboard.writeText(room.code);
+      setCopied('ok');
+    } catch {
+      setCopied('fail');
+    }
+  };
+  // Clear the confirmation so it does not linger after a stale copy.
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(null), 4000);
+    return () => clearTimeout(timer);
+  }, [copied]);
   const heading = MODE_OPTIONS.find(option => option.mode === pendingTask);
   const needsLocation = pendingTask !== 'movies';
   const canReady = !needsLocation || Boolean(location);
   return <Shell eyebrow="ROOM LOBBY" title={<>{room.name}<br /><span>{room.code}</span></>} subtitle="Выберите категорию для игры и ждите, пока все будут готовы." actions={<button className="nav-link" onClick={onBack}>← выйти</button>}>
-    <div className="room-head"><div><span className="eyebrow">ROOM CODE</span><button className="code-pill" onClick={copyCode}>{room.code} ⧉</button></div><div className={`status-dot ${allReady ? 'ready' : ''}`}>{allReady ? 'Все готовы' : `${room.members.filter(m => m.is_ready).length}/${room.members.length} готовы`}</div></div>
+    {/* The room code is the one string a user has to relay to everyone else,
+        so a failed clipboard write has to be visible rather than silent. */}
+    <div className="room-head">
+      <div>
+        <span className="eyebrow">ROOM CODE</span>
+        <button className="code-pill" onClick={() => void copyCode()}>{room.code} ⧉</button>
+        {copied === 'ok' && <span className="code-copied" role="status">Скопировано</span>}
+        {copied === 'fail' && <span className="code-copied warn" role="status">Скопируйте вручную: {room.code}</span>}
+      </div>
+      <div className={`status-dot ${allReady ? 'ready' : ''}`}>{allReady ? 'Все готовы' : `${room.members.filter(m => m.is_ready).length}/${room.members.length} готовы`}</div>
+    </div>
     <div className="lobby-category">
       <div className="category-picker">
         <span className="eyebrow">{isOwner ? 'Крутите колесо — выберите категорию' : 'Категория игры'}</span>
@@ -422,6 +490,12 @@ function SearchSession({ token, session, room, onMatch, onFinish, location, onLo
   // previous one is still in flight, so without this an older batch can land
   // after a newer one and resurrect items that were already rated.
   const feedSeqRef = useRef(0);
+  // Keep the latest handlers in refs so the polling effect below does not tear
+  // down its interval on every parent render (they are passed as inline arrows).
+  const onMatchRef = useRef(onMatch);
+  const onFinishRef = useRef(onFinish);
+  useEffect(() => { onMatchRef.current = onMatch; }, [onMatch]);
+  useEffect(() => { onFinishRef.current = onFinish; }, [onFinish]);
 
   useEffect(() => {
     if (location) {
@@ -486,6 +560,49 @@ function SearchSession({ token, session, room, onMatch, onFinish, location, onLo
     }
     extractPalette(movie.poster_url).then(setPalette).catch(() => setPalette(FALLBACK_PALETTE));
   }, [movie?.poster_url]);
+
+  // Everyone has to land on the match screen, not just the player whose vote
+  // completed it. That player is told by their own vote response; the others
+  // depend on the realtime broadcast, which can be missed (for example when the
+  // last voter lagged behind and the others' sockets were reconnecting). Poll
+  // the session status as a backstop and resolve the match ourselves.
+  useEffect(() => {
+    if (!session.id || !token) return;
+    let active = true;
+    let settled = false;
+    const poll = async () => {
+      if (settled) return;
+      try {
+        const current = await request<Session>(`/sessions/${session.id}`, {}, token);
+        if (!active) return;
+        if (current.status === 'FINISHED') {
+          settled = true;
+          onFinishRef.current();
+          return;
+        }
+        if (current.status !== 'MATCHED') return;
+        const resolved = await request<SessionMatch | null>(`/sessions/${session.id}/match`, {}, token);
+        if (!active || !resolved) return;
+        // Only stop polling once the match is actually in hand; a null result
+        // (still committing, or a transient error) is retried on the next tick.
+        if (resolved.kind === 'movie' && resolved.movie) {
+          settled = true;
+          onMatchRef.current({ kind: 'movie', category: 'movies', movie: resolved.movie });
+        } else if (resolved.kind === 'place' && resolved.place) {
+          settled = true;
+          onMatchRef.current({
+            kind: 'place',
+            category: resolved.category === 'RESTAURANT' ? 'restaurants' : 'entertainment',
+            place: resolved.place,
+          });
+        }
+      } catch {
+        // Transient errors are ignored; the next tick retries.
+      }
+    };
+    const timer = window.setInterval(poll, 4000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [session.id, token]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -600,6 +717,9 @@ function MatchScreen({ result, onBack }: { result: MatchResult | null; onBack: (
 
   const mapUrl = place ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${place.latitude},${place.longitude}`)}` : null;
   const tags = place ? (place.tags.length > 0 ? place.tags : (place.cuisine ?? '').split(';').map(s => s.trim()).filter(Boolean).slice(0, 4)) : [];
+  // Same precedence as PlaceCard: a real OSM photo when one exists, generated
+  // artwork otherwise. The icon standin only survives if both fail.
+  const placeCover = place ? resolveApiAssetUrl(place.image_url) ?? resolveApiAssetUrl(place.cover_url) : null;
 
   return <div className="match-page" style={style}>
     <div className="match-glow" />
@@ -609,7 +729,11 @@ function MatchScreen({ result, onBack }: { result: MatchResult | null; onBack: (
         <div className="hero-copy"><span className="eyebrow">MATCH FOUND</span><h1>Кажется, у вас <span>совпадение.</span></h1><p>{result?.kind === 'place' ? 'Все участники выбрали одно место. Осталось только дойти.' : 'Все участники выбрали один фильм. Вечер уже практически спасён.'}</p></div>
         <div className="match-card-enhanced">
           {movie?.poster_url && <div className="match-poster" style={{ backgroundImage: `url(${movie.poster_url})` }}><div className="match-poster-glow" /></div>}
-          {result?.kind === 'place' && place && <div className="match-place-media"><div className="icon-scaffold"><PlaceCategoryIcon category={place.category} size={76} /></div><span className="match-kicker" style={{ color: 'rgba(255,255,255,.8)' }}>{place.category === 'RESTAURANT' ? 'RESTAURANT' : 'ENTERTAINMENT'} · {place.city ?? 'рядом с вами'}</span><h2 style={{ fontSize: 'clamp(32px,4vw,56px)', margin: '10px 0 0', letterSpacing: '-.04em', textAlign: 'center' }}>{place.name}</h2></div>}
+          {/* The photo goes in as a custom property, not as an inline
+              backgroundImage: an inline background replaces the whole
+              `background` shorthand, which would drop the accent gradient and
+              the scrim the white headline needs. CSS composes the layers. */}
+          {result?.kind === 'place' && place && <div className="match-place-media" style={{ '--place-photo': placeCover ? `url(${placeCover})` : 'none' } as React.CSSProperties}>{!placeCover && <div className="icon-scaffold"><PlaceCategoryIcon category={place.category} size={76} /></div>}<span className="match-kicker match-kicker-invert">{place.category === 'RESTAURANT' ? 'RESTAURANT' : 'ENTERTAINMENT'} · {place.city ?? 'рядом с вами'}</span><h2 className="match-place-name">{place.name}</h2></div>}
           <div className="match-copy">
             {result?.kind === 'place' && place ? <>
               <span className="match-kicker">TONIGHT’S PICK</span>

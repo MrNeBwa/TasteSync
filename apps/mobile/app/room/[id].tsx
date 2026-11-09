@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import QRCode from 'react-native-qrcode-svg';
@@ -18,14 +18,18 @@ export default function RoomScreen(){
   const muted = theme === 'dark' ? '#B3B0A8' : '#777';
   const s = makeStyles(palette, muted);
   const [room,setRoom]=useState<Room|null>(null); const [error,setError]=useState(''); const [starting,setStarting]=useState(false);
-  async function load(){try{setRoom(await request<Room>(`/rooms/${id}`,{},token))}catch(e){setError(e instanceof Error?e.message:'Ошибка комнаты')}}
+  // The websocket SESSION_STARTED event can be missed while reconnecting; the
+  // 5s room poll is the backstop, so only the first navigation wins.
+  const navigated=useRef(false);
+  function goToSession(sessionId:string){if(navigated.current)return;navigated.current=true;router.replace(`/session/${sessionId}`);}
+  async function load(){try{const fresh=await request<Room>(`/rooms/${id}`,{},token);setRoom(fresh);if(fresh.active_session_id)goToSession(fresh.active_session_id)}catch(e){setError(e instanceof Error?e.message:'Ошибка комнаты')}}
   useEffect(()=>{load()},[id]);
   useEffect(()=>{if(!room||!token)return; let closed=false; let ws:WebSocket|null=null; let reconnectTimer:ReturnType<typeof setTimeout>|null=null;
-    const connect=()=>{ws=new WebSocket(`${WS_URL}/ws/rooms/${room.id}?token=${encodeURIComponent(token)}`); ws.onmessage=(ev)=>{try{const m=JSON.parse(ev.data); if(m.type==='ROOM_READY_CHANGED'&&m.payload)setRoom(m.payload); if(m.type==='SESSION_STARTED'&&m.payload)router.replace(`/session/${m.payload.session_id}`);}catch{}}; ws.onclose=()=>{if(!closed)reconnectTimer=setTimeout(connect,4000);};};
+    const connect=()=>{ws=new WebSocket(`${WS_URL}/ws/rooms/${room.id}?token=${encodeURIComponent(token)}`); ws.onmessage=(ev)=>{try{const m=JSON.parse(ev.data); if(m.type==='ROOM_READY_CHANGED'&&m.payload){setRoom(m.payload);if(m.payload.active_session_id)goToSession(m.payload.active_session_id);} if(m.type==='SESSION_STARTED'&&m.payload)goToSession(m.payload.session_id);}catch{}}; ws.onclose=()=>{if(!closed)reconnectTimer=setTimeout(connect,4000);};};
     connect(); const timer=setInterval(load,5000); return()=>{closed=true; if(reconnectTimer)clearTimeout(reconnectTimer); clearInterval(timer); ws?.close();};
   },[room?.id,token]);
   async function ready(v:boolean){try{const r=await request<{room:Room}>(`/rooms/${id}/ready?ready=${v}`,{method:'PATCH'},token);setRoom(r.room)}catch(e){setError(e instanceof Error?e.message:'Не удалось изменить готовность')}}
-  async function start(){setStarting(true);setError('');try{const r=await request<Session>(`/rooms/${id}/start`,{method:'POST'},token); router.replace(`/session/${r.id}`)}catch(e){setError(e instanceof Error?e.message:'Не удалось начать сессию')}finally{setStarting(false)}}
+  async function start(){setStarting(true);setError('');try{const r=await request<Session>(`/rooms/${id}/start`,{method:'POST'},token); goToSession(r.id)}catch(e){setError(e instanceof Error?e.message:'Не удалось начать сессию')}finally{setStarting(false)}}
   async function leave(){try{await request(`/rooms/${id}/members/me`,{method:'DELETE'},token); router.replace('/home')}catch(e){setError(e instanceof Error?e.message:'Не удалось выйти из комнаты')}}
   if(!room)return error?<View style={s.center}><Text style={s.error}>{error}</Text></View>:<Loading/>;
   const me=room.members.find(m=>m.user_id===user?.id); const allReady=room.members.length>0&&room.members.every(m=>m.is_ready);

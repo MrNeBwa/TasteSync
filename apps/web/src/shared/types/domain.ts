@@ -20,6 +20,12 @@ export type Place = {
   website: string | null;
   phone: string | null;
   opening_hours: string | null;
+  /**
+   * Server-generated cover art, always present. `image_url` is a real
+   * OpenStreetMap photo and is null for most places, so clients that want a
+   * picture should fall back to this rather than to a placeholder.
+   */
+  cover_url: string;
 };
 
 export type VotePayload = {
@@ -50,6 +56,20 @@ export type MatchResult =
   | { kind: 'movie'; category: 'movies'; movie: Movie }
   | { kind: 'place'; category: 'restaurants' | 'entertainment'; place: Place };
 
+/**
+ * Payload of `GET /sessions/{id}/match` — the newest match resolved into the
+ * card a client renders, so a poller that missed the realtime event can still
+ * switch everyone to the same result.
+ */
+export type SessionMatch = {
+  kind: 'movie' | 'place';
+  match_id: string;
+  created_at: string;
+  category: string;
+  movie: Movie | null;
+  place: Place | null;
+};
+
 export type Coords = { latitude: number; longitude: number };
 
 export type UserLocation = { coords: Coords; city: string | null };
@@ -78,6 +98,11 @@ export type Room = {
   task?: 'movies' | 'restaurants' | 'entertainment';
   created_at: string;
   members: RoomMember[];
+  /**
+   * Set while a session is live. The lobby polls the room, so a member whose
+   * websocket missed SESSION_STARTED still enters the session.
+   */
+  active_session_id?: string | null;
 };
 
 export type Genre = { id: string; name: string };

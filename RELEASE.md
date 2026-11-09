@@ -31,3 +31,25 @@ Local FastAPI mode allows CORS for direct development clients. Production must u
 ## Upgrade
 
 Do not overwrite the backend when doing a web-only update. The repository is intentionally split so `apps/web` can be replaced independently.
+
+## Android APK
+
+The Android project is generated, not committed. Full instructions — SDK
+install, keystore creation, build, signature verification — are in
+[`apps/mobile/README.md`](apps/mobile/README.md#building-an-android-apk).
+
+```bash
+pnpm --filter @movie-match/mobile prebuild:android
+pnpm --filter @movie-match/mobile apk:release
+# -> apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+```
+
+Two things worth knowing before a Play release:
+
+- `expo prebuild` rewrites `android/` every run, and it signs release builds
+  with the **debug** key by default. `scripts/configure-android-release.js`
+  runs after every prebuild to fix that; skipping it produces an APK that
+  installs but is rejected by Play.
+- The upload keystore is the app's permanent identity. Losing it means the
+  listing can never be updated, regardless of how many rebuilds you do.
+
