@@ -9,7 +9,7 @@ export function onTokenRefreshed(listener: ((token: string) => void) | null) {
 
 export type User = { id: string; username: string; email: string; birth_date: string | null };
 export type RoomMember = { user_id: string; username: string; role: 'OWNER' | 'MEMBER'; is_ready: boolean; joined_at: string };
-export type Room = { id: string; name: string; code: string; owner_id: string; status: string; created_at: string; members: RoomMember[] };
+export type Room = { id: string; name: string; code: string; owner_id: string; status: string; created_at: string; members: RoomMember[]; active_session_id?: string | null };
 export type Genre = { id: string; name: string };
 export type Movie = {
   id: string;

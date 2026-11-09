@@ -42,6 +42,9 @@ class RoomResponse(BaseModel):
 
 class RoomDetailResponse(RoomResponse):
     members: list[RoomMemberResponse]
+    # Set while a session is live. Clients poll the room as a backstop for the
+    # SESSION_STARTED websocket event, which can be missed while reconnecting.
+    active_session_id: UUID | None = None
 
 
 class ReadyResponse(BaseModel):

@@ -98,6 +98,11 @@ export type Room = {
   task?: 'movies' | 'restaurants' | 'entertainment';
   created_at: string;
   members: RoomMember[];
+  /**
+   * Set while a session is live. The lobby polls the room, so a member whose
+   * websocket missed SESSION_STARTED still enters the session.
+   */
+  active_session_id?: string | null;
 };
 
 export type Genre = { id: string; name: string };

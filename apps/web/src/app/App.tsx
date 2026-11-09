@@ -107,6 +107,22 @@ function App() {
     return () => { closed = true; ws.close(); };
   }, [room?.id, token, screen]);
 
+  // The websocket is the fast path, but it is not guaranteed: a member can be
+  // reconnecting exactly when the owner presses "start", and the browser tab
+  // may have been asleep. The lobby polls GET /rooms/{id} every 5s, so entering
+  // the session from `active_session_id` keeps everyone in sync even when
+  // SESSION_STARTED was missed.
+  useEffect(() => {
+    if (screen !== 'room' || !room?.active_session_id) return;
+    setSession({
+      id: room.active_session_id,
+      room_id: room.id,
+      status: 'ACTIVE',
+      created_at: room.created_at,
+    });
+    setScreen('session');
+  }, [screen, room?.id, room?.active_session_id, room?.created_at]);
+
   useEffect(() => {
     if (!room || !token) return;
     setError('');

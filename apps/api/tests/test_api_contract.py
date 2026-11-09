@@ -45,3 +45,9 @@ def test_room_task_enum_matches_web_modes() -> None:
     from app.models.room import RoomTask
 
     assert {task.value for task in RoomTask} == {"movies", "restaurants", "entertainment"}
+
+
+def test_room_detail_exposes_active_session_id() -> None:
+    schema = app.openapi()
+    props = schema["components"]["schemas"]["RoomDetailResponse"]["properties"]
+    assert "active_session_id" in props

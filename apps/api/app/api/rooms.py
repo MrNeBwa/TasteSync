@@ -38,7 +38,7 @@ from app.websocket.manager import manager
 router = APIRouter(prefix="/rooms", tags=["rooms"])
 
 
-def room_detail(room) -> RoomDetailResponse:
+def room_detail(room, active_session_id: UUID | None = None) -> RoomDetailResponse:
     return RoomDetailResponse(
         id=room.id,
         name=room.name,
@@ -57,7 +57,13 @@ def room_detail(room) -> RoomDetailResponse:
             )
             for member in room.members
         ],
+        active_session_id=active_session_id,
     )
+
+
+async def room_detail_for(room, session: AsyncSession) -> RoomDetailResponse:
+    active = await SessionRepository(session).get_active_for_room(room.id)
+    return room_detail(room, active.id if active is not None else None)
 
 
 @router.post("", response_model=RoomResponse, status_code=status.HTTP_201_CREATED)
@@ -106,7 +112,7 @@ async def join_room(
         await session.rollback()
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
-    detail = room_detail(room)
+    detail = await room_detail_for(room, session)
     # The joined member is not on the websocket yet (they connect once the
     # lobby mounts), but everyone already there must see them immediately
     # instead of waiting for the newcomer to toggle ready.
@@ -134,7 +140,7 @@ async def get_room(
         raise HTTPException(status_code=404, detail="Room not found") from exc
     except NotMemberError as exc:
         raise HTTPException(status_code=403, detail="User is not a member of this room") from exc
-    return room_detail(room)
+    return await room_detail_for(room, session)
 
 
 @router.patch("/{room_id}/ready", response_model=ReadyResponse)
@@ -158,7 +164,7 @@ async def set_ready(
         await session.rollback()
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
-    detail = room_detail(room)
+    detail = await room_detail_for(room, session)
     await manager.broadcast(
         room_id,
         {
@@ -191,7 +197,7 @@ async def update_room_task(
         await session.rollback()
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
-    detail = room_detail(room)
+    detail = await room_detail_for(room, session)
     await manager.broadcast(
         room_id,
         {"type": "ROOM_TASK_CHANGED", "room_id": str(room_id), "payload": detail.model_dump(mode="json")},
